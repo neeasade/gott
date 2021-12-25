@@ -21,8 +21,7 @@ import (
 	"github.com/imdario/mergo"
 )
 
-// Define Stringer as an interface type with one method, String.
-// Define pair as a struct with two fields, ints named x and y.
+// this could probably be a type alias
 type config struct {
     data map[string]interface{}
 }
@@ -42,9 +41,7 @@ func (c config) Promote(path []string) config {
 		panic(err)
 	}
 
-	var toReturn = config{}
-	toReturn.data = result
-	return toReturn
+	return config{data: result}
 }
 
 func (c config) Render(template_text string) string {
@@ -59,23 +56,22 @@ func (c config) Render(template_text string) string {
 	return result.String()
 }
 
-// func walk(v interface{}, config config, string[] path) {
-//     switch v := v.(type) {
-//     case []interface{}:
-// 	for i, v := range v {
-//             // fmt.Println("index:", i)
-//             walk(v)
-//         }
-//     case map[string]interface{}:
-// 	for k, v := range v {
-//             // fmt.Println("key:", k)
-//             walk(v)
-//         }
-//     default:
-// 	// here -- promote path and render
-// 	fmt.Println(v)
-//     }
-// }
+func walk(m map[string]interface{}, config config, path []string) map[string]interface{} {
+	for k, v := range m {
+		// path =
+		switch v := v.(type) {
+		// case []interface{}:
+			// for i, v := range v {
+			// 	// m[k][i] = walk(v, config, path)
+			// }
+		case map[string]interface{}:
+			m[k] = walk(v, config, append(path, k))
+		case string:
+			m[k] = config.Promote(path).Render(v)
+		}
+	}
+	return m
+}
 
 func (c config) Process() {
 
@@ -285,15 +281,13 @@ func main() {
 
 	// result := test.Render("{{env \"HOME\"}}")
 	// result := test.Render("{{.font.family}}")
-	newOne := test.Promote([]string{"font"})
+
+	walk(test.data, test, []string{})
 
 	// fmt.Printf("%v\n", test.data)
 	// fmt.Printf("%v\n", newOne.data)
 
-	result := test.Render("{{.family}}")
-	println(result)
-
-	result = newOne.Render("{{.family}}")
+	result := test.Render("{{.font.config}}")
 	println(result)
 
 	os.Exit(0)
