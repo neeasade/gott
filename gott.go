@@ -12,7 +12,7 @@ import (
 	"log"
 	"os"
 	"strings"
-	"html/template"
+	"text/template"
 
 	"golang.org/x/sync/errgroup"
 	"github.com/pelletier/go-toml/v2"
@@ -52,15 +52,8 @@ func (c config) Flatten() map[string]string {
 
 // return a copy of self with path promoted to top level data
 func (c config) Promote(path []string) config {
-	// "copy"
-	// result := map[string]interface{}{}
 	result := config{}
 	mergo.Merge(&result, c)
-
-	// var dig map[string]interface{} = c.data
-	// for _, key := range path {
-	// 	dig = dig[key].(map[string]interface{})
-	// }
 
 	if err := mergo.Merge(&result, c.Narrow(path)); err != nil {
 		panic(err)
@@ -71,7 +64,7 @@ func (c config) Promote(path []string) config {
 
 func (c config) Narrow(path []string) config {
 	// "copy"
-	result := map[string]interface{}{}
+	result := config{}
 	mergo.Merge(&result, c)
 
 	var dig map[string]interface{} = c
@@ -83,7 +76,7 @@ func (c config) Narrow(path []string) config {
 }
 
 func (c config) Render(template_text string) string {
-	t := template.Must(template.New("base").Funcs(sprig.FuncMap()).Parse(template_text))
+	t := template.Must(template.New("base").Funcs(sprig.TxtFuncMap()).Parse(template_text))
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c)
 
