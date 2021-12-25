@@ -4,72 +4,72 @@ Gott is a *go toml transformer*. It adds support for go templates in [[https://g
 
 ** TODO Examples
 
-# Demo:
+Demo:
 
-# #+begin_src conf-toml
-# # sample.toml
-# [font]
-# family = "Charter"
-# size = 16
+#+begin_src conf-toml
+# sample.toml
+[font]
+family = "Charter"
+size = 16
 
-# # reference:
-# config = "@{family} @{size}"
+# reference:
+config = "@{family} @{size}"
 
-# [loud]
-# # transformers:
-# upper = "tr '[:lower:]' '[:upper:]'"
-# font-config-loud = "@{font.config:upper}"
-# #+end_src
+[loud]
+# transformers:
+upper = "tr '[:lower:]' '[:upper:]'"
+font-config-loud = "@{font.config:upper}"
+#+end_src
 
-# ** Output types
+** Output types
 
-# resulting toml:
+resulting toml:
 
-# #+begin_src conf-toml
-# $ gott -l sample.toml -o toml
-# [font]
-# family = "Charter"
-# size = 16
+#+begin_src conf-toml
+$ gott -l sample.toml -o toml
+[font]
+family = "Charter"
+size = 16
 
-# # reference:
-# config = "Charter 16"
+# reference:
+config = "Charter 16"
 
-# [loud]
-# # transformers:
-# upper = "tr '[:lower:]' '[:upper:]'"
-# font-config-loud = "CHARTER 16"
-# #+end_src
+[loud]
+# transformers:
+upper = "tr '[:lower:]' '[:upper:]'"
+font-config-loud = "CHARTER 16"
+#+end_src
 
-# As environment variables:
+As environment variables:
 
-# #+begin_src sh
-# $ gott -l sample.toml -o shell
-# font_family="Charter"
-# font_size="16"
-# font_config="Charter 16"
-# loud_upper="tr '[:lower:]' '[:upper:]'"
-# loud_font_config_loud="CHARTER 16"
-# #+end_src
+#+begin_src sh
+$ gott -l sample.toml -o shell
+font_family="Charter"
+font_size="16"
+font_config="Charter 16"
+loud_upper="tr '[:lower:]' '[:upper:]'"
+loud_font_config_loud="CHARTER 16"
+#+end_src
 
-# As a renderer:
+As a renderer:
 
-# #+begin_src text
-# $ cat file.txt
-# {{font.family}}
-# $ gott -l sample.toml -r file.txt
-# Charter
-# #+end_src
+#+begin_src text
+$ cat file.txt
+{{font.family}}
+$ gott -l sample.toml -r file.txt
+Charter
+#+end_src
 
 
-# ** Flags
+** Flags
 
-# Most flags may be used multiple times (with the exception of '-o').
+Most flags may be used multiple times (with the exception of '-o').
 
-# | ~-l~ | Add a toml file to be considered. Duplicate keys are overridden.           |
-# | ~-c~ | Promote a toml table to the global context. Duplicate keys are overridden. |
+| ~-l~ | Add a toml file to be considered. Duplicate keys are overridden.           |
+| ~-c~ | Promote a toml table to the global context. Duplicate keys are overridden. |
 
-# Action flags:
+Action flags:
 
-# | ~-r <file>~          | Render a file                                         |
-# | ~-o [shell¦toml]~    | dump rendered values in a format                      |
-# | ~-q <path.to.value>~ | print the rendered value (implicit surrounding '@{}') |
+| ~-r <file>~          | Render a file                                         |
+| ~-o [shell¦toml]~    | dump rendered values in a format                      |
+| ~-q <path.to.value>~ | print the rendered value (implicit surrounding '@{}') |

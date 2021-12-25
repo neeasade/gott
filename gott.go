@@ -1,17 +1,5 @@
 package main
 
-// todo:
-// "checking" modes/linting modes when rendering
-// tests
-
-// some thoughts...
-// would a more "golang" way of doing things be to build a structure for our
-// string-string map? and then have functions that act on it for getting
-// individual values, rendering and such?
-
-// right now this is very dynamic, and the style doesn't feel like it's "jiving"
-// (but that could also just be my go comfort level)
-
 import (
 	"bytes"
 	"crypto/md5"
@@ -19,192 +7,78 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"io"
+	// "io"
 	"log"
 	"os"
-	"os/exec"
-	"regexp"
+	// "os/exec"
+	// "regexp"
 	"strings"
+	"html/template"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/Masterminds/sprig"
+	"github.com/imdario/mergo"
 )
 
-// stringify nested paths from INPUT as keys in RESULTS (merges/overrides matches)
-func flattenMap(input map[string]interface{}, namespace string, results map[string]string) {
-	if namespace != "" {
-		namespace = namespace + "."
-	}
-
-	for key, value := range input {
-		nested, is_map := value.(map[string]interface{})
-		_, is_array := value.([]interface{})
-		if is_map {
-			flattenMap(nested, namespace+key, results)
-		} else if is_array {
-			// do nothing, for now.
-			// for index, _ := range arrayVal {
-			// 	index_string := fmt.Sprintf("[%i]", index)
-			// 	flattenMap(nested, namespace + key + index_string, results)
-			// }
-		} else {
-			// todo: consider printing if an override happens
-			results[namespace+key] = fmt.Sprintf("%v", value)
-		}
-	}
+// Define Stringer as an interface type with one method, String.
+// Define pair as a struct with two fields, ints named x and y.
+type config struct {
+    data map[string]interface{}
 }
 
-// todo: reconsider this whole thing
-func shConf(command, value string) string {
-	if strings.ContainsRune(command, '%') {
-		shell := strings.ReplaceAll(command, "%", value)
-		out, err := exec.Command("bash", "-c", shell).Output()
+// return a copy of self with path promoted to top level data
+func (c config) Promote(path []string) config {
+	// fake a copy
+	result := map[string]interface{}{}
+	mergo.Merge(&result, c.data)
 
-		if err != nil {
-			log.Fatal(err)
-		}
-		return string(out)
-	} else {
-		cmd := exec.Command("bash", "-c", command)
-		stdin, _ := cmd.StdinPipe()
-
-		go func() {
-			defer stdin.Close()
-			io.WriteString(stdin, value)
-		}()
-
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Fatal(command)
-			log.Fatal(err)
-		}
-
-		return string(out)
-	}
-}
-
-// Get the parent of a path using delim.
-func parent(path, delim string) string {
-	parts := strings.Split(path, delim)
-	return strings.Join(parts[0:len(parts)-1], delim)
-}
-
-// Do a basic mustache template matcher -- only handles direct matches.
-func mustache(config map[string]string, template string) string {
-	stacheRe := regexp.MustCompile("\\{\\{([^{}]+)\\}\\}")
-	matches := stacheRe.FindAllStringSubmatch(template, -1)
-
-	for _, groups := range matches {
-		match := groups[0]
-		ident := groups[1]
-
-		if result, ok := config[ident]; ok {
-			template = strings.ReplaceAll(template, match, result)
-		} else {
-			println("gott: template key not found!: ", ident)
-		}
+	var dig map[string]interface{} = c.data
+	for _, key := range path {
+		dig = dig[key].(map[string]interface{})
 	}
 
-	return template
-}
-
-// Render some string with the templating syntax and a map of strings to strings.
-//
-// @{path.to.value:_.transformer}
-// @{localValue:localTransformer} (context given through namespace)
-func render(config map[string]string, template string, namespace string) string {
-	transformPattern := ":[A-Za-z\\.-_]+"
-	referencePattern := fmt.Sprintf("[^@]?(@\\{([^{}:]+)(%s)*\\})", transformPattern)
-	referenceRe := regexp.MustCompile(referencePattern)
-
-	matches := referenceRe.FindAllStringSubmatch(template, -1)
-	if matches == nil {
-		return template
+	if err := mergo.Merge(&result, dig); err != nil {
+		panic(err)
 	}
 
-	for _, groups := range matches {
-		match := groups[1]
-		ident := groups[2]
-		transformers := groups[3:]
-
-		var result = ""
-
-		local_ident := namespace + "." + ident
-		if _, ok := config[local_ident]; ok {
-			ident = local_ident
-		}
-
-		result = render(config, config[ident], parent(ident, "."))
-
-		for _, transformer := range transformers {
-			if transformer != "" {
-				transformer = transformer[1:]
-				local_ident := namespace + "." + transformer
-
-				if _, ok := config[local_ident]; ok {
-					transformer = local_ident
-				}
-
-				transformer_ns := parent(transformer, ".")
-				transformer = "@{" + transformer + "}"
-				result = shConf(render(config, transformer, transformer_ns), result)
-			}
-		}
-
-		result = strings.TrimSpace(result)
-		if result == "" {
-			println("render resulted in nothing!: ", namespace, match)
-		}
-		template = strings.ReplaceAll(template, match, result)
-	}
-	return template
+	var toReturn = config{}
+	toReturn.data = result
+	return toReturn
 }
 
-// Promote value in config to top level
-func promoteNamespace(config map[string]string, ns string) {
-	ns = ns + "."
-	for key, value := range config {
-		if strings.Index(key, ns) == 0 {
-			new_key := key[len(ns):len(key)]
-			config[new_key] = value
-		}
-	}
-}
+func (c config) Render(template_text string) string {
+	t := template.Must(template.New("base").Funcs(sprig.FuncMap()).Parse(template_text))
 
-// Filter to values starting with ns
-func narrowToNamespace(config map[string]string, ns string) map[string]string {
-	// it appears mutating iterations are non-deterministic?
-	// edit: the issue is insertions mid range: https://go.dev/ref/spec#For_range
-	new_config := map[string]string{}
+	result := new(bytes.Buffer)
+	err := t.Execute(result, c.data)
 
-	ns = ns + "."
-	for key, value := range config {
-		if strings.Index(key, ns) == 0 {
-			new_key := key[len(ns):len(key)]
-			new_config[new_key] = value
-		}
-	}
-	return new_config
-}
-
-func slurp(f string) string {
-	bytes, err := os.ReadFile(f)
 	if err != nil {
-		log.Fatalf("file not found: %s", f)
+		panic(err)
 	}
-	return string(bytes)
+	return result.String()
 }
 
-// add an array type for flag
-type arrayFlag []string
+// func walk(v interface{}, config config, string[] path) {
+//     switch v := v.(type) {
+//     case []interface{}:
+// 	for i, v := range v {
+//             // fmt.Println("index:", i)
+//             walk(v)
+//         }
+//     case map[string]interface{}:
+// 	for k, v := range v {
+//             // fmt.Println("key:", k)
+//             walk(v)
+//         }
+//     default:
+// 	// here -- promote path and render
+// 	fmt.Println(v)
+//     }
+// }
 
-func (i *arrayFlag) String() string {
-	return "nope"
-}
+func (c config) Process() {
 
-func (i *arrayFlag) Set(value string) error {
-	*i = append(*i, value)
-	return nil
 }
 
 func act(config map[string]string, renderTargets []string, action, queryString string) {
@@ -217,21 +91,28 @@ func act(config map[string]string, renderTargets []string, action, queryString s
 		fmt.Print(string(b))
 	case "keys":
 		for k, _ := range config {
+			// todo: build a stringified path version
 			fmt.Println(k)
 		}
 	case "shell":
 		for k, v := range config {
 			k = strings.ReplaceAll(k, ".", "_")
+
 			// meh on this replace value
 			k = strings.ReplaceAll(k, "-", "_")
+
 			v = strings.ReplaceAll(v, "'", "'\\''")
 			fmt.Printf("%s='%s'\n", k, v)
 		}
 	}
 
-	for _, file := range renderTargets {
-		fmt.Println(mustache(config, slurp(file)))
-	}
+	// for _, file := range renderTargets {
+	// 	// bytes, err := os.ReadFile(file)
+	// 	// if err != nil {
+	// 	// 	log.Fatalf("file not found: %s", f)
+	// 	// }
+	// 	// fmt.Println(mustache(config, string(bytes)))
+	// }
 
 	if queryString != "" {
 		if result, ok := config[queryString]; ok {
@@ -252,6 +133,42 @@ func reverse(input []string) []string {
     return output
 }
 
+func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
+	result := map[string]interface{}{}
+
+	// reverse tomlFiles
+	for left, right := 0, len(tomlFiles)-1; left < right; left, right = left+1, right-1 {
+		tomlFiles[left], tomlFiles[right] = tomlFiles[right], tomlFiles[left]
+	}
+
+	for _, file := range tomlFiles {
+		bytes, err := os.ReadFile(file)
+		if err != nil {
+			log.Fatalf("TOML file not found: %s", file)
+		}
+		// "prepend"
+		tomlText = append([]string{string(bytes)}, tomlText...)
+	}
+
+	for _, text := range tomlText {
+		var parsed map[string]interface{}
+		err := toml.Unmarshal([]byte(text), &parsed)
+		if err != nil {
+			// NB: need to match against length
+			// see https://stackoverflow.com/questions/27252152/how-to-check-if-a-slice-has-a-given-index-in-go
+			// if file := tomlFiles[i]; {
+			// 	println("err in toml file: %s", file)
+			// }
+			panic(err)
+		}
+		if err := mergo.Merge(&result, parsed); err != nil {
+			panic(err)
+		}
+	}
+
+	return result
+}
+
 func getConfig(tomlFiles, tomlText []string) map[string]string {
 	config := map[string]string{}
 
@@ -266,6 +183,8 @@ func getConfig(tomlFiles, tomlText []string) map[string]string {
 	if err != nil {
 		cached = false
 	}
+
+	cached = false
 
 	if cached {
 		cache_chan := make(chan map[string]string)
@@ -311,27 +230,9 @@ func getConfig(tomlFiles, tomlText []string) map[string]string {
 		}
 	}
 
-	// ok, we aren't cached. time to:
-	// ａｂｓｏｒｂ
-	// ｒｅｎｄｅｒ
-	// ｃａｃｈｅ
-	for _, file := range reverse(tomlFiles) {
-		// "prepend"
-		tomlText = append([]string{slurp(file)}, tomlText...)
-	}
-
-	for _, text := range tomlText {
-		var values map[string]interface{}
-		err := toml.Unmarshal([]byte(text), &values)
-		if err != nil {
-			log.Fatalf("%s\n-----\nerror parsing: %s")
-		}
-		flattenMap(values, "", config)
-	}
-
-	for key, value := range config {
-		config[key] = render(config, value, parent(key, "."))
-	}
+	// for key, value := range config {
+	// 	config[key] = render(config, value, parent(key, "."))
+	// }
 
 	b := new(bytes.Buffer)
 	e := gob.NewEncoder(b)
@@ -342,13 +243,25 @@ func getConfig(tomlFiles, tomlText []string) map[string]string {
 
 	var perm os.FileMode = 0o644
 	// todo: this should be fs/parent
-	os.MkdirAll(parent(cache_file, "/"), 0700)
+	// os.MkdirAll(parent(cache_file, "/"), 0700)
 
 	// todo: yell on fail
 	os.WriteFile(cache_file, b.Bytes(), perm)
 	// todo: cache eviction/cleanup
 
 	return config
+}
+
+// add an array type for flag
+type arrayFlag []string
+
+func (i *arrayFlag) String() string {
+	return ""
+}
+
+func (i *arrayFlag) Set(value string) error {
+	*i = append(*i, value)
+	return nil
 }
 
 func main() {
@@ -365,15 +278,41 @@ func main() {
 
 	flag.Parse()
 
+	// test.data = map[string]interface{}{"wow": map[string]interface{}{"really": "ok"}}
+
+	test := config{}
+	test.data = parseToml(tomlFiles, tomlText)
+
+	// result := test.Render("{{env \"HOME\"}}")
+	// result := test.Render("{{.font.family}}")
+	newOne := test.Promote([]string{"font"})
+
+	// fmt.Printf("%v\n", test.data)
+	// fmt.Printf("%v\n", newOne.data)
+
+	result := test.Render("{{.family}}")
+	println(result)
+
+	result = newOne.Render("{{.family}}")
+	println(result)
+
+	os.Exit(0)
+
+
+	// flow should look something like
+
+	// result, err := trycache
+	// else
+
 	config := getConfig(tomlFiles, tomlText)
 
-	for _, p := range promotions {
-		promoteNamespace(config, p)
-	}
+	// for _, p := range promotions {
+	// 	promoteNamespace(config, p)
+	// }
 
-	if narrow != "" {
-		config = narrowToNamespace(config, narrow)
-	}
+	// if narrow != "" {
+	// 	// config = narrowToNamespace(config, narrow)
+	// }
 
 	act(config, renderTargets, action, queryString)
 }
