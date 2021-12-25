@@ -2,22 +2,22 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
-	"golang.org/x/sync/errgroup"
-	"github.com/pelletier/go-toml/v2"
 	"github.com/Masterminds/sprig"
 	"github.com/imdario/mergo"
+	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 type config map[string]interface{}
@@ -91,9 +91,9 @@ func realizeConfig(m map[string]interface{}, config config, path []string) map[s
 	for k, v := range m {
 		switch v := v.(type) {
 		// case []interface{}:
-			// for i, v := range v {
-			// 	// m[k][i] = walk(v, config, path)
-			// }
+		// for i, v := range v {
+		// 	// m[k][i] = walk(v, config, path)
+		// }
 		case map[string]interface{}:
 			m[k] = realizeConfig(v, config, append(path, k))
 		case string:
