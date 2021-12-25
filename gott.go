@@ -62,7 +62,6 @@ func (c config) Render(template_text string) (string, error) {
 
 // Have a config render itself
 func realizeConfig(subConfig config, rootConfig config) error {
-	// realizedConfig := map[string]interface{}{}
 	for key, value := range subConfig {
 		switch value.(type) {
 		case map[string]interface{}:
@@ -85,9 +84,6 @@ func realizeConfig(subConfig config, rootConfig config) error {
 			}
 
 			return errors.New("failed to render template for key")
-
-		default:
-			subConfig[key] = value
 		}
 	}
 
