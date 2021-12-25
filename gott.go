@@ -7,11 +7,8 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	// "io"
 	"log"
 	"os"
-	// "os/exec"
-	// "regexp"
 	"strings"
 	"html/template"
 	"time"
@@ -26,9 +23,54 @@ type config struct {
     data map[string]interface{}
 }
 
+func flattenMap(results map[string]string, m map[string]interface{}, namespace string) {
+	if namespace != "" {
+		namespace = namespace + "."
+	}
+
+	for key, value := range m {
+		nested, is_map := value.(map[string]interface{})
+		_, is_array := value.([]interface{})
+		if is_map {
+			flattenMap(results, nested, namespace+key)
+		} else if is_array {
+			// do nothing (string array indexes sounds gross)
+			// for index, _ := range arrayVal {
+			// 	index_string := fmt.Sprintf("[%i]", index)
+			// 	flattenMap(nested, namespace + key + index_string, results)
+			// }
+		} else {
+			results[namespace+key] = fmt.Sprintf("%v", value)
+		}
+	}
+}
+
+func (c config) Flatten() map[string]string {
+	results := map[string]string{}
+	flattenMap(results, c.data, "")
+	return results
+}
+
 // return a copy of self with path promoted to top level data
 func (c config) Promote(path []string) config {
-	// fake a copy
+	// "copy"
+	result := map[string]interface{}{}
+	mergo.Merge(&result, c.data)
+
+	// var dig map[string]interface{} = c.data
+	// for _, key := range path {
+	// 	dig = dig[key].(map[string]interface{})
+	// }
+
+	if err := mergo.Merge(&result, c.Narrow(path).data); err != nil {
+		panic(err)
+	}
+
+	return config{data: result}
+}
+
+func (c config) Narrow(path []string) config {
+	// "copy"
 	result := map[string]interface{}{}
 	mergo.Merge(&result, c.data)
 
@@ -37,16 +79,11 @@ func (c config) Promote(path []string) config {
 		dig = dig[key].(map[string]interface{})
 	}
 
-	if err := mergo.Merge(&result, dig); err != nil {
-		panic(err)
-	}
-
-	return config{data: result}
+	return config{data: dig}
 }
 
 func (c config) Render(template_text string) string {
 	t := template.Must(template.New("base").Funcs(sprig.FuncMap()).Parse(template_text))
-
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c.data)
 
@@ -56,77 +93,21 @@ func (c config) Render(template_text string) string {
 	return result.String()
 }
 
-func walk(m map[string]interface{}, config config, path []string) map[string]interface{} {
+// Have a config render itself
+func realizeConfig(m map[string]interface{}, config config, path []string) map[string]interface{} {
 	for k, v := range m {
-		// path =
 		switch v := v.(type) {
 		// case []interface{}:
 			// for i, v := range v {
 			// 	// m[k][i] = walk(v, config, path)
 			// }
 		case map[string]interface{}:
-			m[k] = walk(v, config, append(path, k))
+			m[k] = realizeConfig(v, config, append(path, k))
 		case string:
 			m[k] = config.Promote(path).Render(v)
 		}
 	}
 	return m
-}
-
-func (c config) Process() {
-
-}
-
-func act(config map[string]string, renderTargets []string, action, queryString string) {
-	switch action {
-	case "toml":
-		b, err := toml.Marshal(config)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Print(string(b))
-	case "keys":
-		for k, _ := range config {
-			// todo: build a stringified path version
-			fmt.Println(k)
-		}
-	case "shell":
-		for k, v := range config {
-			k = strings.ReplaceAll(k, ".", "_")
-
-			// meh on this replace value
-			k = strings.ReplaceAll(k, "-", "_")
-
-			v = strings.ReplaceAll(v, "'", "'\\''")
-			fmt.Printf("%s='%s'\n", k, v)
-		}
-	}
-
-	// for _, file := range renderTargets {
-	// 	// bytes, err := os.ReadFile(file)
-	// 	// if err != nil {
-	// 	// 	log.Fatalf("file not found: %s", f)
-	// 	// }
-	// 	// fmt.Println(mustache(config, string(bytes)))
-	// }
-
-	if queryString != "" {
-		if result, ok := config[queryString]; ok {
-			fmt.Println(result)
-		} else {
-			log.Fatal("query not found")
-		}
-	}
-}
-
-func reverse(input []string) []string {
-    var output []string
-
-    for i := len(input) - 1; i >= 0; i-- {
-        output = append(output, input[i])
-    }
-
-    return output
 }
 
 func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
@@ -262,51 +243,65 @@ func (i *arrayFlag) Set(value string) error {
 
 func main() {
 	var tomlFiles, promotions, renderTargets, tomlText arrayFlag
-	var action, queryString, narrow string
+	var action, queryString, queryStringPlain, narrow string
 
 	flag.Var(&tomlFiles, "t", "Add a toml file to consider")
 	flag.Var(&tomlText, "T", "Add raw toml to consider")
 	flag.Var(&promotions, "p", "Promote a namespace to the top level")
 	flag.Var(&renderTargets, "r", "Render a file")
 	flag.StringVar(&action, "o", "", "Output type <shell|toml>")
-	flag.StringVar(&queryString, "q", "", "Query for a value (implicit surrounding @{})")
+	flag.StringVar(&queryString, "q", "", "Render a string (implicit surrounding {{}})")
+	flag.StringVar(&queryStringPlain, "R", "", "Render a string")
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 
 	flag.Parse()
 
-	// test.data = map[string]interface{}{"wow": map[string]interface{}{"really": "ok"}}
+	config := config{}
+	config.data = parseToml(tomlFiles, tomlText)
+	realizeConfig(config.data, config, []string{})
 
-	test := config{}
-	test.data = parseToml(tomlFiles, tomlText)
+	for _, p := range promotions {
+		config = config.Promote(strings.Split(p, "."))
+	}
 
-	// result := test.Render("{{env \"HOME\"}}")
-	// result := test.Render("{{.font.family}}")
+	if narrow != "" {
+		config = config.Narrow(strings.Split(narrow, "."))
+	}
 
-	walk(test.data, test, []string{})
+	switch action {
+	case "toml":
+		b, err := toml.Marshal(config.data)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Print(string(b))
+	case "keys":
+		for k, _ := range config.Flatten() {
+			fmt.Println(k)
+		}
+	case "shell":
+		for k, v := range config.Flatten() {
+			k = strings.ReplaceAll(k, ".", "_")
+			// // meh on this replace value
+			k = strings.ReplaceAll(k, "-", "_")
+			v = strings.ReplaceAll(v, "'", "'\\''")
+			fmt.Printf("%s='%s'\n", k, v)
+		}
+	}
 
-	// fmt.Printf("%v\n", test.data)
-	// fmt.Printf("%v\n", newOne.data)
+	for _, file := range renderTargets {
+		bytes, err := os.ReadFile(file)
+		if err != nil {
+			log.Fatalf("render file not found: %s", file)
+		}
+		fmt.Println(config.Render(string(bytes)))
+	}
 
-	result := test.Render("{{.font.config}}")
-	println(result)
+	if queryString != "" {
+		fmt.Println(config.Render("{{" + queryString + "}}"))
+	}
 
-	os.Exit(0)
-
-
-	// flow should look something like
-
-	// result, err := trycache
-	// else
-
-	config := getConfig(tomlFiles, tomlText)
-
-	// for _, p := range promotions {
-	// 	promoteNamespace(config, p)
-	// }
-
-	// if narrow != "" {
-	// 	// config = narrowToNamespace(config, narrow)
-	// }
-
-	act(config, renderTargets, action, queryString)
+	if queryStringPlain != "" {
+		fmt.Println(config.Render(queryString))
+	}
 }
