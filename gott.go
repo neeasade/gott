@@ -196,9 +196,10 @@ func main() {
 
 	flag.Parse()
 
-	// conceptually related to retrieving the config
 	cacheChan, cacheFile, cacheErr := getCachedConfig(tomlFiles, tomlText)
+
 	config := config{}
+
 	if cacheErr == nil {
 		config = <-cacheChan
 	} else {
