@@ -63,21 +63,21 @@ func (c config) Render(template_text string) (string, error) {
 // Have a config render itself
 func realizeConfig(subConfig config, rootConfig config) error {
 	for key, value := range subConfig {
-		switch value.(type) {
+		switch value := value.(type) {
 		case map[string]interface{}:
-			err := realizeConfig(value.(map[string]interface{}), rootConfig)
+			err := realizeConfig(value, rootConfig)
 			if err != nil {
 				return err
 			}
 
 		case string:
-			realizedValue, err := subConfig.Render(value.(string))
+			realizedValue, err := subConfig.Render(value)
 			if err == nil {
 				subConfig[key] = realizedValue
 				continue
 			}
 
-			realizedValue, err = rootConfig.Render(value.(string))
+			realizedValue, err = rootConfig.Render(value)
 			if err == nil {
 				subConfig[key] = realizedValue
 				continue
