@@ -12,4 +12,5 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.0-beta.4
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 )

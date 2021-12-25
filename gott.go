@@ -2,26 +2,25 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/gob"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"log"
 	"os"
 	"strings"
 	"html/template"
-	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/Masterminds/sprig"
 	"github.com/imdario/mergo"
 )
 
-// this could probably be a type alias
-type config struct {
-    data map[string]interface{}
-}
+type config map[string]interface{}
 
 func flattenMap(results map[string]string, m map[string]interface{}, namespace string) {
 	if namespace != "" {
@@ -47,45 +46,46 @@ func flattenMap(results map[string]string, m map[string]interface{}, namespace s
 
 func (c config) Flatten() map[string]string {
 	results := map[string]string{}
-	flattenMap(results, c.data, "")
+	flattenMap(results, c, "")
 	return results
 }
 
 // return a copy of self with path promoted to top level data
 func (c config) Promote(path []string) config {
 	// "copy"
-	result := map[string]interface{}{}
-	mergo.Merge(&result, c.data)
+	// result := map[string]interface{}{}
+	result := config{}
+	mergo.Merge(&result, c)
 
 	// var dig map[string]interface{} = c.data
 	// for _, key := range path {
 	// 	dig = dig[key].(map[string]interface{})
 	// }
 
-	if err := mergo.Merge(&result, c.Narrow(path).data); err != nil {
+	if err := mergo.Merge(&result, c.Narrow(path)); err != nil {
 		panic(err)
 	}
 
-	return config{data: result}
+	return result
 }
 
 func (c config) Narrow(path []string) config {
 	// "copy"
 	result := map[string]interface{}{}
-	mergo.Merge(&result, c.data)
+	mergo.Merge(&result, c)
 
-	var dig map[string]interface{} = c.data
+	var dig map[string]interface{} = c
 	for _, key := range path {
 		dig = dig[key].(map[string]interface{})
 	}
 
-	return config{data: dig}
+	return dig
 }
 
 func (c config) Render(template_text string) string {
 	t := template.Must(template.New("base").Funcs(sprig.FuncMap()).Parse(template_text))
 	result := new(bytes.Buffer)
-	err := t.Execute(result, c.data)
+	err := t.Execute(result, c)
 
 	if err != nil {
 		panic(err)
@@ -146,87 +146,45 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	return result
 }
 
-func getConfig(tomlFiles, tomlText []string) map[string]string {
-	config := map[string]string{}
-
+func getCachedConfig(tomlFiles, tomlText []string) (chan config, string, error) {
 	sumStrings := append(tomlFiles, tomlText...)
 	sumBytes := md5.Sum([]byte(strings.Join(sumStrings, "")))
 	sumInt := binary.BigEndian.Uint64(sumBytes[:])
-	cache_file := os.Getenv("HOME") + "/.cache/gott/" + fmt.Sprintf("%v", sumInt)
+	cacheFile := os.Getenv("HOME") + "/.cache/gott/" + fmt.Sprintf("%v", sumInt)
 
-	cached := true
-
-	cacheInfo, err := os.Stat(cache_file)
-	if err != nil {
-		cached = false
+	cacheInfo, cacheErr := os.Stat(cacheFile)
+	if cacheErr != nil {
+		return nil, cacheFile, errors.New("no cache file")
 	}
 
-	cached = false
+	g := new(errgroup.Group)
+	gob.Register(map[string]interface{}{})
 
-	if cached {
-		cache_chan := make(chan map[string]string)
+	cacheChan := make(chan config)
 
-		go func() {
-			decoded_config := map[string]string{}
-			b, err := os.ReadFile(cache_file)
-			d := gob.NewDecoder(bytes.NewReader(b))
-			err = d.Decode(&decoded_config)
-			if err != nil {
-				panic(err)
+	go func() {
+		decoded := config{}
+		b, err := os.ReadFile(cacheFile)
+		d := gob.NewDecoder(bytes.NewReader(b))
+		err = d.Decode(&decoded)
+		if err != nil {
+			panic(err)
+		}
+		cacheChan <- decoded
+	}()
+
+	cacheTime := cacheInfo.ModTime()
+	for _, f := range tomlFiles {
+		g.Go(func() error {
+			info, _ := os.Stat(f)
+			if cacheTime.After(info.ModTime()) {
+				return errors.New("toml file changed")
 			}
-			cache_chan <- decoded_config
-		}()
-
-		checkTime := func(f string, cache_time time.Time) chan bool {
-			c := make(chan bool)
-			go func() {
-				info, err := os.Stat(f)
-				if err != nil {
-					log.Fatalf("err when stating file '%s': %s", f, err)
-				}
-				c <- cache_time.After(info.ModTime())
-			}()
-			return c
-		}
-
-		timeChannels := make([]chan bool, len(tomlFiles))
-		cacheTime := cacheInfo.ModTime()
-		for i, f := range tomlFiles {
-			timeChannels[i] = checkTime(f, cacheTime)
-		}
-
-		for _, c := range timeChannels {
-			cached = cached && <-c
-			if ! cached {
-				break
-			}
-		}
-
-		if cached {
-			return <-cache_chan
-		}
+			return nil
+		})
 	}
 
-	// for key, value := range config {
-	// 	config[key] = render(config, value, parent(key, "."))
-	// }
-
-	b := new(bytes.Buffer)
-	e := gob.NewEncoder(b)
-	err = e.Encode(config)
-	if err != nil {
-		panic(err)
-	}
-
-	var perm os.FileMode = 0o644
-	// todo: this should be fs/parent
-	// os.MkdirAll(parent(cache_file, "/"), 0700)
-
-	// todo: yell on fail
-	os.WriteFile(cache_file, b.Bytes(), perm)
-	// todo: cache eviction/cleanup
-
-	return config
+	return cacheChan, cacheFile, g.Wait()
 }
 
 // add an array type for flag
@@ -256,9 +214,16 @@ func main() {
 
 	flag.Parse()
 
+	cacheChan, cacheFile, cacheErr := getCachedConfig(tomlFiles, tomlText)
+
 	config := config{}
-	config.data = parseToml(tomlFiles, tomlText)
-	realizeConfig(config.data, config, []string{})
+
+	if cacheErr == nil {
+		config = <-cacheChan
+	} else {
+		config = parseToml(tomlFiles, tomlText)
+		realizeConfig(config, config, []string{})
+	}
 
 	for _, p := range promotions {
 		config = config.Promote(strings.Split(p, "."))
@@ -270,7 +235,7 @@ func main() {
 
 	switch action {
 	case "toml":
-		b, err := toml.Marshal(config.data)
+		b, err := toml.Marshal(config)
 		if err != nil {
 			panic(err)
 		}
@@ -304,4 +269,17 @@ func main() {
 	if queryStringPlain != "" {
 		fmt.Println(config.Render(queryString))
 	}
+
+	if cacheErr != nil {
+		b := new(bytes.Buffer)
+		e := gob.NewEncoder(b)
+		err := e.Encode(config)
+		if err != nil {
+			panic(err)
+		}
+
+		os.MkdirAll(filepath.Dir(cacheFile), os.ModePerm)
+		os.WriteFile(cacheFile, b.Bytes(), os.ModePerm)
+	}
+	// todo: cache eviction/cleanup
 }
