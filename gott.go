@@ -177,7 +177,7 @@ func getCachedConfig(tomlFiles, tomlText []string) (chan config, string, error) 
 	for _, f := range tomlFiles {
 		g.Go(func() error {
 			info, _ := os.Stat(f)
-			if cacheTime.After(info.ModTime()) {
+			if info.ModTime().After(cacheTime) {
 				return errors.New("toml file changed")
 			}
 			return nil
