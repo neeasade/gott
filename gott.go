@@ -61,34 +61,37 @@ func (c config) Render(template_text string) (string, error) {
 }
 
 // Have a config render itself
-func realizeConfig(subConfig config, rootConfig config) (map[string]interface{}, error) {
-	realizedConfig := map[string]interface{}{}
+func realizeConfig(subConfig config, rootConfig config) error {
+	// realizedConfig := map[string]interface{}{}
 	for key, value := range subConfig {
 		switch value.(type) {
-		case config:
-			subRealizedConfig, err := realizeConfig(value.(config), rootConfig)
+		case map[string]interface{}:
+			err := realizeConfig(value.(map[string]interface{}), rootConfig)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			realizedConfig[key] = subRealizedConfig
 
 		case string:
 			realizedValue, err := subConfig.Render(value.(string))
 			if err == nil {
-				realizedConfig[key] = realizedValue
+				subConfig[key] = realizedValue
 				continue
 			}
 
 			realizedValue, err = rootConfig.Render(value.(string))
 			if err == nil {
-				realizedConfig[key] = realizedValue
+				subConfig[key] = realizedValue
 				continue
 			}
 
-			return nil, errors.New("failed to render template for key")
+			return errors.New("failed to render template for key")
+
+		default:
+			subConfig[key] = value
 		}
 	}
-	return realizedConfig, nil
+
+	return nil
 }
 
 func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
@@ -200,7 +203,10 @@ func main() {
 		config = <-cacheChan
 	} else {
 		config = parseToml(tomlFiles, tomlText)
-		realizeConfig(config, config)
+		err := realizeConfig(config, config)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	switch action {
