@@ -271,6 +271,8 @@ func main() {
 	}
 
 	if cacheErr != nil {
+		gob.Register(map[string]interface{}{})
+		// gob.Register(config)
 		b := new(bytes.Buffer)
 		e := gob.NewEncoder(b)
 		err := e.Encode(config)
