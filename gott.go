@@ -50,57 +50,45 @@ func (c config) Flatten() map[string]string {
 	return results
 }
 
-// return a copy of self with path promoted to top level data
-func (c config) Promote(path []string) config {
-	result := config{}
-	mergo.Merge(&result, c)
-
-	if err := mergo.Merge(&result, c.Narrow(path)); err != nil {
-		panic(err)
-	}
-
-	return result
-}
-
-func (c config) Narrow(path []string) config {
-	// "copy"
-	result := config{}
-	mergo.Merge(&result, c)
-
-	var dig map[string]interface{} = c
-	for _, key := range path {
-		dig = dig[key].(map[string]interface{})
-	}
-
-	return dig
-}
-
-func (c config) Render(template_text string) string {
+func (c config) Render(template_text string) (string, error) {
 	t := template.Must(template.New("base").Funcs(sprig.TxtFuncMap()).Parse(template_text))
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c)
-
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return result.String()
+	return result.String(), nil
 }
 
 // Have a config render itself
-func realizeConfig(m map[string]interface{}, config config, path []string) map[string]interface{} {
-	for k, v := range m {
-		switch v := v.(type) {
-		// case []interface{}:
-			// for i, v := range v {
-			// 	// m[k][i] = walk(v, config, path)
-			// }
-		case map[string]interface{}:
-			m[k] = realizeConfig(v, config, append(path, k))
+func realizeConfig(subConfig config, rootConfig config) (map[string]interface{}, error) {
+	realizedConfig := map[string]interface{}{}
+	for key, value := range subConfig {
+		switch value.(type) {
+		case config:
+			subRealizedConfig, err := realizeConfig(value.(config), rootConfig)
+			if err != nil {
+				return nil, err
+			}
+			realizedConfig[key] = subRealizedConfig
+
 		case string:
-			m[k] = config.Promote(path).Render(v)
+			realizedValue, err := subConfig.Render(value.(string))
+			if err == nil {
+				realizedConfig[key] = realizedValue
+				continue
+			}
+
+			realizedValue, err = rootConfig.Render(value.(string))
+			if err == nil {
+				realizedConfig[key] = realizedValue
+				continue
+			}
+
+			return nil, errors.New("failed to render template for key")
 		}
 	}
-	return m
+	return realizedConfig, nil
 }
 
 func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
@@ -193,37 +181,26 @@ func (i *arrayFlag) Set(value string) error {
 }
 
 func main() {
-	var tomlFiles, promotions, renderTargets, tomlText arrayFlag
-	var action, queryString, queryStringPlain, narrow string
+	var tomlFiles, renderTargets, tomlText arrayFlag
+	var action, queryString, queryStringPlain string
 
 	flag.Var(&tomlFiles, "t", "Add a toml file to consider")
 	flag.Var(&tomlText, "T", "Add raw toml to consider")
-	flag.Var(&promotions, "p", "Promote a namespace to the top level")
 	flag.Var(&renderTargets, "r", "Render a file")
 	flag.StringVar(&action, "o", "", "Output type <shell|toml>")
 	flag.StringVar(&queryString, "q", "", "Render a string (implicit surrounding {{}})")
 	flag.StringVar(&queryStringPlain, "R", "", "Render a string")
-	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 
 	flag.Parse()
 
+	// conceptually related to retrieving the config
 	cacheChan, cacheFile, cacheErr := getCachedConfig(tomlFiles, tomlText)
-
 	config := config{}
-
 	if cacheErr == nil {
 		config = <-cacheChan
 	} else {
 		config = parseToml(tomlFiles, tomlText)
-		realizeConfig(config, config, []string{})
-	}
-
-	for _, p := range promotions {
-		config = config.Promote(strings.Split(p, "."))
-	}
-
-	if narrow != "" {
-		config = config.Narrow(strings.Split(narrow, "."))
+		realizeConfig(config, config)
 	}
 
 	switch action {
