@@ -56,13 +56,9 @@ func (c config) Flatten() map[string]string {
 }
 
 func (c config) Promote(path []string) config {
-	// result := config{}
-	// mergo.Merge(&result, c)
-
 	if err := mergo.Merge(&c, c.Narrow(path)); err != nil {
 		panic(err)
 	}
-
 	return c
 }
 
@@ -169,11 +165,6 @@ func parseToml(tomlFiles, tomlText []string) config {
 		var parsed map[string]interface{}
 		err := toml.Unmarshal([]byte(text), &parsed)
 		if err != nil {
-			// NB: need to match against length
-			// see https://stackoverflow.com/questions/27252152/how-to-check-if-a-slice-has-a-given-index-in-go
-			// if file := tomlFiles[i]; {
-			// 	println("err in toml file: %s", file)
-			// }
 			panic(err)
 		}
 		if err := mergo.Merge(&result, parsed); err != nil {
@@ -256,7 +247,12 @@ func main() {
 	}
 
 	if queryString != "" {
-		fmt.Println(config.Render(makeTemplate(), "{{."+queryString+"}}"))
+		// text/template doesn't like '-', but you can get around it with the index function
+		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
+		parts := strings.Split(queryString, ".")
+		queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
+		vlog("queryString: %s", queryString)
+		fmt.Println(config.Render(makeTemplate(), queryString))
 	}
 
 	if queryStringPlain != "" {
