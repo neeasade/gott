@@ -9,7 +9,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -20,7 +22,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var verbose bool = false
+var glog *log.Logger = log.New(os.Stderr, "", 0)
 type config map[string]interface{}
+
+func vLog(args ...interface{}) {
+	if verbose {
+		fmt.Fprintln(os.Stderr, args...)
+	}
+}
 
 func flattenMap(results map[string]string, m map[string]interface{}, namespace string) {
 	if namespace != "" {
@@ -75,16 +85,33 @@ func (c config) Narrow(path []string) config {
 	return dig
 }
 
-func (c config) Render(template_text string) string {
+func (c config) Render(template_text, name string) string {
 	funcMap := (sprig.TxtFuncMap())
-	funcMap["sh"] = func(s string) string {
-		// todo
-		return s
+	funcMap["sh"] = func(command, value string) string {
+		cmd := exec.Command("bash", "-c", command)
+		stdin, _ := cmd.StdinPipe()
+
+		go func() {
+			defer stdin.Close()
+			io.WriteString(stdin, value)
+		}()
+
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Fatal(command)
+			log.Fatal(err)
+		}
+
+		return string(out)
 	}
-	t := template.Must(template.New("base").Funcs(funcMap).Parse(template_text))
+
+	// todo: (toInt64 is a "cast" wrapper)
+	// funcMap["inc"] = func(i interface{}) int64 { return toInt64(i) + 1 }
+	// funcMap["dec"] = func(i interface{}) int64 { return toInt64(i) - 1 }
+
+	t := template.Must(template.New(name).Option("missingkey=zero").Funcs(funcMap).Parse(template_text))
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c)
-
 	if err != nil {
 		panic(err)
 	}
@@ -102,7 +129,7 @@ func realizeConfig(m map[string]interface{}, config config, path []string) map[s
 		case map[string]interface{}:
 			m[k] = realizeConfig(v, config, append(path, k))
 		case string:
-			m[k] = config.Promote(path).Render(v)
+			m[k] = config.Promote(path).Render(v, strings.Join(path, "."))
 		}
 	}
 	return m
@@ -119,7 +146,7 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	for _, file := range tomlFiles {
 		bytes, err := os.ReadFile(file)
 		if err != nil {
-			log.Fatalf("TOML file not found: %s", file)
+			glog.Fatalf("TOML file not found: %s", file)
 		}
 		// "prepend"
 		tomlText = append([]string{string(bytes)}, tomlText...)
@@ -171,7 +198,7 @@ func getConfig(tomlFiles, tomlText []string, skipCache bool) config {
 			g.Go(func() error {
 				info, _ := os.Stat(f)
 				if info.ModTime().After(cacheInfo.ModTime()) {
-					return errors.New("toml file changed")
+					return errors.New("TOML file newer than cachefile")
 				}
 				return nil
 			})
@@ -224,6 +251,7 @@ func main() {
 	flag.Var(&renderTargets, "r", "Render a file")
 	flag.StringVar(&action, "o", "", "Output type <shell|toml>")
 	flag.BoolVar(&skipCache, "c", false, "skip caching")
+	flag.BoolVar(&verbose, "v", false, "be verbose")
 	flag.StringVar(&queryString, "q", "", "Render a string (implicit surrounding {{}})")
 	flag.StringVar(&queryStringPlain, "R", "", "Render a string")
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
@@ -251,6 +279,7 @@ func main() {
 			fmt.Println(k)
 		}
 	case "shell":
+		// todo: this should handle arrays and 1d tables
 		for k, v := range config.Flatten() {
 			k = strings.ReplaceAll(k, ".", "_")
 			// // meh on this replace value
@@ -263,17 +292,17 @@ func main() {
 	for _, file := range renderTargets {
 		bytes, err := os.ReadFile(file)
 		if err != nil {
-			log.Fatalf("render file not found: %s", file)
+			glog.Fatalf("render file not found: %s", file)
 		}
-		fmt.Println(config.Render(string(bytes)))
+		fmt.Println(config.Render(string(bytes), file))
 	}
 
 	if queryString != "" {
-		fmt.Println(config.Render("{{" + queryString + "}}"))
+		fmt.Println(config.Render("{{" + queryString + "}}", "query"))
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(config.Render(queryString))
+		fmt.Println(config.Render(queryString, "queryPlain"))
 	}
 
 	// todo: cache eviction/cleanup
