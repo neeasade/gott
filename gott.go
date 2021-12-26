@@ -79,7 +79,7 @@ func (c config) Narrow(path []string) config {
 	return dig
 }
 
-func (c config) Render(template_text, name string) string {
+func makeTemplate () *template.Template {
 	funcMap := (sprig.TxtFuncMap())
 	funcMap["sh"] = func(command, value string) string {
 		cmd := exec.Command("bash", "-c", command)
@@ -101,18 +101,24 @@ func (c config) Render(template_text, name string) string {
 
 	funcMap["eq"] = func(a, b interface{}) bool { return a == b }
 
-	// if verbose {
-	// 	vlog("loaded funcmap functions are:")
-	// 	for k, _ := range funcMap {
-	// 		vlog(k)
-	// 	}
-	// }
+	if verbose {
+		vlog("loaded funcmap functions are:")
+		for k, _ := range funcMap {
+			vlog(k)
+		}
+	}
 
 	// todo: (toInt64 is a "cast" wrapper)
 	// funcMap["inc"] = func(i interface{}) int64 { return toInt64(i) + 1 }
 	// funcMap["dec"] = func(i interface{}) int64 { return toInt64(i) - 1 }
 
-	t := template.Must(template.New(name).Option("missingkey=zero").Funcs(funcMap).Parse(template_text))
+	return template.New("🌳").Option("missingkey=zero").Funcs(funcMap)
+	// .Parse(template_text)
+}
+
+
+func (c config) Render(tmpl *template.Template, template_text string) string {
+	t := template.Must(tmpl.Parse(template_text))
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c)
 	if err != nil {
@@ -122,7 +128,7 @@ func (c config) Render(template_text, name string) string {
 }
 
 // Have a config render itself
-func realizeConfig(m map[string]interface{}, config config, path []string) map[string]interface{} {
+func realizeConfig(m map[string]interface{}, config config, path []string, tmpl *template.Template) map[string]interface{} {
 	for k, v := range m {
 		switch v := v.(type) {
 		// case []interface{}:
@@ -130,7 +136,7 @@ func realizeConfig(m map[string]interface{}, config config, path []string) map[s
 		// 	// m[k][i] = walk(v, config, path)
 		// }
 		case map[string]interface{}:
-			m[k] = realizeConfig(v, config, append(path, k))
+			m[k] = realizeConfig(v, config, append(path, k), tmpl)
 		case string:
 			// oof
 			for strings.Contains(m[k].(string), "{{") {
@@ -138,7 +144,7 @@ func realizeConfig(m map[string]interface{}, config config, path []string) map[s
 
 				name := strings.Join(append(path, k), ".")
 				vlog("rendering %s: %s", name, v)
-				m[k] = config.Promote(path).Render(v, name)
+				m[k] = config.Promote(path).Render(tmpl, v)
 				if m[k] != v {
 					vlog("   result %s: %s", name, m[k])
 				}
@@ -192,6 +198,7 @@ func getConfig(tomlFiles, tomlText []string, skipCache bool) config {
 
 	cacheInfo, cacheErr := os.Stat(cacheFile)
 	if cacheErr == nil && !skipCache {
+		vlog("trying to load from cache")
 		gob.Register(map[string]interface{}{})
 		g := new(errgroup.Group)
 
@@ -218,12 +225,15 @@ func getConfig(tomlFiles, tomlText []string, skipCache bool) config {
 		}
 
 		if g.Wait() == nil {
+			vlog("loaded from cache!")
 			return <-cacheChan
 		}
 	}
 
+	vlog("not loading from cache")
 	config := parseToml(tomlFiles, tomlText)
-	realizeConfig(config, config, []string{})
+	tmpl := makeTemplate()
+	realizeConfig(config, config, []string{}, tmpl)
 
 	if cacheErr != nil {
 		gob.Register(map[string]interface{}{})
@@ -307,15 +317,15 @@ func main() {
 		if err != nil {
 			glog.Fatalf("render file not found: %s", file)
 		}
-		fmt.Println(config.Render(string(bytes), file))
+		fmt.Println(config.Render(makeTemplate(), string(bytes)))
 	}
 
 	if queryString != "" {
-		fmt.Println(config.Render("{{." + queryString + "}}", "query"))
+		fmt.Println(config.Render(makeTemplate(), "{{." + queryString + "}}"))
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(config.Render(queryString, "queryPlain"))
+		fmt.Println(config.Render(makeTemplate(), "queryPlain"))
 	}
 
 	// todo: cache eviction/cleanup
