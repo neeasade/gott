@@ -76,7 +76,12 @@ func (c config) Narrow(path []string) config {
 }
 
 func (c config) Render(template_text string) string {
-	t := template.Must(template.New("base").Funcs(sprig.TxtFuncMap()).Parse(template_text))
+	funcMap := (sprig.TxtFuncMap())
+	funcMap["sh"] = func(s string) string {
+		// todo
+		return s
+	}
+	t := template.Must(template.New("base").Funcs(funcMap).Parse(template_text))
 	result := new(bytes.Buffer)
 	err := t.Execute(result, c)
 
@@ -139,45 +144,61 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	return result
 }
 
-func getCachedConfig(tomlFiles, tomlText []string) (chan config, string, error) {
+func getConfig(tomlFiles, tomlText []string, skipCache bool) config {
 	sumStrings := append(tomlFiles, tomlText...)
 	sumBytes := md5.Sum([]byte(strings.Join(sumStrings, "")))
 	sumInt := binary.BigEndian.Uint64(sumBytes[:])
 	cacheFile := os.Getenv("HOME") + "/.cache/gott/" + fmt.Sprintf("%v", sumInt)
 
 	cacheInfo, cacheErr := os.Stat(cacheFile)
-	if cacheErr != nil {
-		return nil, cacheFile, errors.New("no cache file")
+	if cacheErr == nil && !skipCache {
+		gob.Register(map[string]interface{}{})
+		g := new(errgroup.Group)
+
+		cacheChan := make(chan config)
+		go func() {
+			decoded := config{}
+			b, err := os.ReadFile(cacheFile)
+			d := gob.NewDecoder(bytes.NewReader(b))
+			err = d.Decode(&decoded)
+			if err != nil {
+				panic(err)
+			}
+			cacheChan <- decoded
+		}()
+
+		for _, f := range tomlFiles {
+			g.Go(func() error {
+				info, _ := os.Stat(f)
+				if info.ModTime().After(cacheInfo.ModTime()) {
+					return errors.New("toml file changed")
+				}
+				return nil
+			})
+		}
+
+		if g.Wait() == nil {
+			return <-cacheChan
+		}
 	}
 
-	g := new(errgroup.Group)
-	gob.Register(map[string]interface{}{})
+	config := parseToml(tomlFiles, tomlText)
+	realizeConfig(config, config, []string{})
 
-	cacheChan := make(chan config)
-
-	go func() {
-		decoded := config{}
-		b, err := os.ReadFile(cacheFile)
-		d := gob.NewDecoder(bytes.NewReader(b))
-		err = d.Decode(&decoded)
+	if cacheErr != nil {
+		gob.Register(map[string]interface{}{})
+		b := new(bytes.Buffer)
+		e := gob.NewEncoder(b)
+		err := e.Encode(config)
 		if err != nil {
 			panic(err)
 		}
-		cacheChan <- decoded
-	}()
 
-	cacheTime := cacheInfo.ModTime()
-	for _, f := range tomlFiles {
-		g.Go(func() error {
-			info, _ := os.Stat(f)
-			if info.ModTime().After(cacheTime) {
-				return errors.New("toml file changed")
-			}
-			return nil
-		})
+		os.MkdirAll(filepath.Dir(cacheFile), os.ModePerm)
+		os.WriteFile(cacheFile, b.Bytes(), os.ModePerm)
 	}
 
-	return cacheChan, cacheFile, g.Wait()
+	return config
 }
 
 // add an array type for flag
@@ -195,28 +216,20 @@ func (i *arrayFlag) Set(value string) error {
 func main() {
 	var tomlFiles, promotions, renderTargets, tomlText arrayFlag
 	var action, queryString, queryStringPlain, narrow string
+	var skipCache bool
 
 	flag.Var(&tomlFiles, "t", "Add a toml file to consider")
 	flag.Var(&tomlText, "T", "Add raw toml to consider")
 	flag.Var(&promotions, "p", "Promote a namespace to the top level")
 	flag.Var(&renderTargets, "r", "Render a file")
 	flag.StringVar(&action, "o", "", "Output type <shell|toml>")
+	flag.BoolVar(&skipCache, "c", false, "skip caching")
 	flag.StringVar(&queryString, "q", "", "Render a string (implicit surrounding {{}})")
 	flag.StringVar(&queryStringPlain, "R", "", "Render a string")
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
-
 	flag.Parse()
 
-	cacheChan, cacheFile, cacheErr := getCachedConfig(tomlFiles, tomlText)
-
-	config := config{}
-
-	if cacheErr == nil {
-		config = <-cacheChan
-	} else {
-		config = parseToml(tomlFiles, tomlText)
-		realizeConfig(config, config, []string{})
-	}
+	config := getConfig(tomlFiles, tomlText, skipCache)
 
 	for _, p := range promotions {
 		config = config.Promote(strings.Split(p, "."))
@@ -263,18 +276,5 @@ func main() {
 		fmt.Println(config.Render(queryString))
 	}
 
-	if cacheErr != nil {
-		gob.Register(map[string]interface{}{})
-		// gob.Register(config)
-		b := new(bytes.Buffer)
-		e := gob.NewEncoder(b)
-		err := e.Encode(config)
-		if err != nil {
-			panic(err)
-		}
-
-		os.MkdirAll(filepath.Dir(cacheFile), os.ModePerm)
-		os.WriteFile(cacheFile, b.Bytes(), os.ModePerm)
-	}
 	// todo: cache eviction/cleanup
 }
