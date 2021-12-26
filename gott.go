@@ -2,33 +2,28 @@ package main
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/binary"
-	"encoding/gob"
-	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"io"
+	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
 	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml/v2"
-	"golang.org/x/sync/errgroup"
 )
 
 var verbose bool = false
 var glog *log.Logger = log.New(os.Stderr, "", 0)
+
 type config map[string]interface{}
 
 func vlog(format string, args ...interface{}) {
 	if verbose {
-		fmt.Fprintf(os.Stderr, format + "\n", args...)
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 }
 
@@ -79,7 +74,7 @@ func (c config) Narrow(path []string) config {
 	return dig
 }
 
-func makeTemplate () *template.Template {
+func makeTemplate() *template.Template {
 	funcMap := (sprig.TxtFuncMap())
 	funcMap["sh"] = func(command, value string) string {
 		cmd := exec.Command("bash", "-c", command)
@@ -115,7 +110,6 @@ func makeTemplate () *template.Template {
 	return template.New("🌳").Option("missingkey=zero").Funcs(funcMap)
 	// .Parse(template_text)
 }
-
 
 func (c config) Render(tmpl *template.Template, template_text string) string {
 	t := template.Must(tmpl.Parse(template_text))
@@ -154,7 +148,7 @@ func realizeConfig(m map[string]interface{}, config config, path []string, tmpl 
 	return m
 }
 
-func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
+func parseToml(tomlFiles, tomlText []string) config {
 	result := map[string]interface{}{}
 
 	// reverse tomlFiles
@@ -190,67 +184,6 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	return result
 }
 
-func getConfig(tomlFiles, tomlText []string, skipCache bool) config {
-	sumStrings := append(tomlFiles, tomlText...)
-	sumBytes := md5.Sum([]byte(strings.Join(sumStrings, "")))
-	sumInt := binary.BigEndian.Uint64(sumBytes[:])
-	cacheFile := os.Getenv("HOME") + "/.cache/gott/" + fmt.Sprintf("%v", sumInt)
-
-	cacheInfo, cacheErr := os.Stat(cacheFile)
-	if cacheErr == nil && !skipCache {
-		vlog("trying to load from cache")
-		gob.Register(map[string]interface{}{})
-		g := new(errgroup.Group)
-
-		cacheChan := make(chan config)
-		go func() {
-			decoded := config{}
-			b, err := os.ReadFile(cacheFile)
-			d := gob.NewDecoder(bytes.NewReader(b))
-			err = d.Decode(&decoded)
-			if err != nil {
-				panic(err)
-			}
-			cacheChan <- decoded
-		}()
-
-		for _, f := range tomlFiles {
-			g.Go(func() error {
-				info, _ := os.Stat(f)
-				if info.ModTime().After(cacheInfo.ModTime()) {
-					return errors.New("TOML file newer than cachefile")
-				}
-				return nil
-			})
-		}
-
-		if g.Wait() == nil {
-			vlog("loaded from cache!")
-			return <-cacheChan
-		}
-	}
-
-	vlog("not loading from cache")
-	config := parseToml(tomlFiles, tomlText)
-	tmpl := makeTemplate()
-	realizeConfig(config, config, []string{}, tmpl)
-
-	if cacheErr != nil {
-		gob.Register(map[string]interface{}{})
-		b := new(bytes.Buffer)
-		e := gob.NewEncoder(b)
-		err := e.Encode(config)
-		if err != nil {
-			panic(err)
-		}
-
-		os.MkdirAll(filepath.Dir(cacheFile), os.ModePerm)
-		os.WriteFile(cacheFile, b.Bytes(), os.ModePerm)
-	}
-
-	return config
-}
-
 // add an array type for flag
 type arrayFlag []string
 
@@ -280,7 +213,9 @@ func main() {
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 	flag.Parse()
 
-	config := getConfig(tomlFiles, tomlText, skipCache)
+	config := parseToml(tomlFiles, tomlText)
+	tmpl := makeTemplate()
+	realizeConfig(config, config, []string{}, tmpl)
 
 	for _, p := range promotions {
 		config = config.Promote(strings.Split(p, "."))
@@ -321,12 +256,10 @@ func main() {
 	}
 
 	if queryString != "" {
-		fmt.Println(config.Render(makeTemplate(), "{{." + queryString + "}}"))
+		fmt.Println(config.Render(makeTemplate(), "{{."+queryString+"}}"))
 	}
 
 	if queryStringPlain != "" {
 		fmt.Println(config.Render(makeTemplate(), "queryPlain"))
 	}
-
-	// todo: cache eviction/cleanup
 }
