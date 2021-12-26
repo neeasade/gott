@@ -26,9 +26,9 @@ var verbose bool = false
 var glog *log.Logger = log.New(os.Stderr, "", 0)
 type config map[string]interface{}
 
-func vLog(args ...interface{}) {
+func vlog(format string, args ...interface{}) {
 	if verbose {
-		fmt.Fprintln(os.Stderr, args...)
+		fmt.Fprintf(os.Stderr, format + "\n", args...)
 	}
 }
 
@@ -60,28 +60,22 @@ func (c config) Flatten() map[string]string {
 	return results
 }
 
-// return a copy of self with path promoted to top level data
 func (c config) Promote(path []string) config {
-	result := config{}
-	mergo.Merge(&result, c)
+	// result := config{}
+	// mergo.Merge(&result, c)
 
-	if err := mergo.Merge(&result, c.Narrow(path)); err != nil {
+	if err := mergo.Merge(&c, c.Narrow(path)); err != nil {
 		panic(err)
 	}
 
-	return result
+	return c
 }
 
 func (c config) Narrow(path []string) config {
-	// "copy"
-	result := config{}
-	mergo.Merge(&result, c)
-
 	var dig map[string]interface{} = c
 	for _, key := range path {
 		dig = dig[key].(map[string]interface{})
 	}
-
 	return dig
 }
 
@@ -104,6 +98,15 @@ func (c config) Render(template_text, name string) string {
 
 		return string(out)
 	}
+
+	funcMap["eq"] = func(a, b interface{}) bool { return a == b }
+
+	// if verbose {
+	// 	vlog("loaded funcmap functions are:")
+	// 	for k, _ := range funcMap {
+	// 		vlog(k)
+	// 	}
+	// }
 
 	// todo: (toInt64 is a "cast" wrapper)
 	// funcMap["inc"] = func(i interface{}) int64 { return toInt64(i) + 1 }
@@ -129,7 +132,17 @@ func realizeConfig(m map[string]interface{}, config config, path []string) map[s
 		case map[string]interface{}:
 			m[k] = realizeConfig(v, config, append(path, k))
 		case string:
-			m[k] = config.Promote(path).Render(v, strings.Join(path, "."))
+			// oof
+			for strings.Contains(m[k].(string), "{{") {
+				v := m[k].(string)
+
+				name := strings.Join(append(path, k), ".")
+				vlog("rendering %s: %s", name, v)
+				m[k] = config.Promote(path).Render(v, name)
+				if m[k] != v {
+					vlog("   result %s: %s", name, m[k])
+				}
+			}
 		}
 	}
 	return m
@@ -298,7 +311,7 @@ func main() {
 	}
 
 	if queryString != "" {
-		fmt.Println(config.Render("{{" + queryString + "}}", "query"))
+		fmt.Println(config.Render("{{." + queryString + "}}", "query"))
 	}
 
 	if queryStringPlain != "" {
