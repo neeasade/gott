@@ -98,6 +98,10 @@ func (c config) Promote(path []string) config {
 }
 
 func (c config) Dig(path []string) (result config, is_map bool, error error) {
+	if (len(path) == 0) {
+		return c, true, nil
+	}
+
 	if v, ok := c[path[0]]; ok {
 		m, is_map := v.(map[string]interface{})
 		if is_map {
@@ -187,8 +191,6 @@ func qualifyConfig(m map[string]interface{}, c config, path []string) map[string
 			}
 
 			for _, groups := range matches {
-				// result[2*n:2*n+1]
-				// match := groups[0]
 				matchPrefix := groups[1]
 				matchPath := strings.Split(groups[2][1:], ".")
 				matchKey := matchPath[0]
@@ -324,11 +326,13 @@ func main() {
 		config = c
 	}
 
-	view, err := config.View(action)
-	if err != nil {
-		panic(err)
+	if action != "" {
+		view, err := config.View(action)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Print(view)
 	}
-	fmt.Print(view)
 
 	for _, file := range renderTargets {
 		bytes, err := os.ReadFile(file)

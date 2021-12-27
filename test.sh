@@ -2,20 +2,22 @@
 # sanity integration test
 
 toml=$(cat <<EOF
+ok = '{{.b.localA}}'
 [a]
-a = "wow!!"
-a2 = "ok {{.a}}"
+a = 'wow!!'
+a2 = 'ok {{.a}}'
 one = 1
-zero = "{{sub .one 1}}"
+zero = '{{sub .one 1}}'
 
 [b]
-a = "{{.a.a}}"
-b = "b"
-local-a = "{{.a}}"
+a = '{{.a.a}}'
+b = 'b'
+localA = '{{.a}}'
 EOF
 )
 
 expected=$(cat <<EOF
+ok = 'wow!!'
 [a]
 a = 'wow!!'
 a2 = 'ok wow!!'
@@ -25,7 +27,7 @@ zero = '0'
 [b]
 a = 'wow!!'
 b = 'b'
-local-a = 'wow!!'
+localA = 'wow!!'
 EOF
 )
 
