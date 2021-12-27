@@ -124,7 +124,7 @@ func (c config) Dig(path []string) (result config, is_map bool, error error) {
 
 func makeTemplate() *template.Template {
 	funcMap := (sprig.TxtFuncMap())
-	funcMap["sh"] = func(command, value string) string {
+	funcMap["shpipe"] = func(command, value string) string {
 		cmd := exec.Command("bash", "-c", command)
 		stdin, _ := cmd.StdinPipe()
 
@@ -135,10 +135,17 @@ func makeTemplate() *template.Template {
 
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Fatal(command)
-			log.Fatal(err)
+			glog.Fatal(err)
 		}
 
+		return string(out)
+	}
+
+	funcMap["sh"] = func(command string) string {
+		out, err := exec.Command("bash", "-c", command).Output()
+		if err != nil {
+			glog.Fatal(err)
+		}
 		return string(out)
 	}
 

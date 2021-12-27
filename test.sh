@@ -50,6 +50,7 @@ case $? in
 esac
 
 if ! test "$expected" = "$result"; then
-    echo "test failed!" >&2
-    diff <(echo "$result") <(echo "$expected")
+    echo "test failed!"
+    echo "left: expected, right: result"
+    diff -w -y <(echo "$expected") <(echo "$result")
 fi

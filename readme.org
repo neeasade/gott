@@ -116,3 +116,5 @@ People who helped through feedback and iteration:
 - [[https://github.com/crockeo][@crockeo]]
 - [[https://github.com/skaasten][@skaasten]]
 - [[https://github.com/sector-f][@sector-f]]
+
+Previous inspo: https://github.com/metakirby5/zenbu
