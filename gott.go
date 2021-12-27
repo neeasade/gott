@@ -250,8 +250,12 @@ func main() {
 		// text/template doesn't like '-', but you can get around it with the index function
 		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
 		parts := strings.Split(queryString, ".")
-		queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
-		vlog("queryString: %s", queryString)
+		if len(parts) > 1 {
+			queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
+			vlog("queryString: %s", queryString)
+		} else {
+			queryString = "{{." + queryString + "}}"
+		}
 		fmt.Println(config.Render(makeTemplate(), queryString))
 	}
 

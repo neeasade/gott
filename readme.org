@@ -1,18 +1,38 @@
-Gott is a *go toml transformer*. It adds support for go templates in [[https://github.com/toml-lang/toml][toml]] files.
+gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/template][go templates]] in [[https://github.com/toml-lang/toml][toml]] files. It also bundles the [[https://pkg.go.dev/text/template][sprig]] template functions.
 
 ** Example
 
 #+begin_src conf-toml
-# font.toml
+# example.toml
 [font]
 family = "Charter"
 size = 16
 
-# reference:
-config = "{{.family}} {{.size}}"
+# references can be local, or global
+config = "{{.family}}-{{.size}}"
 
 [loud]
-font-config-loud = "{{.font.config | upper}}"
+font-config = "{{.font.config | upper}}"
+
+[colors]
+solarized = [
+    "#eee8d5",
+    "#dc322f",
+    "#859900",
+    "#b58900",
+    "#268bd2",
+    "#d33682",
+    "#2aa198",
+    "#eee8d5",
+    "#fdf6e3",
+    "#cb4b16",
+    "#93a1a1",
+    "#839496",
+    "#839496",
+    "#6c71c4",
+    "#93a1a1",
+    "#fdf6e3"
+]
 #+end_src
 
 ** Output types
@@ -20,31 +40,53 @@ font-config-loud = "{{.font.config | upper}}"
 resulting toml:
 
 #+begin_src conf-toml
-$ gott -t font.toml -o toml
+$ gott -t example.toml -o toml
 [font]
 config = 'Charter 16'
 family = 'Charter'
 size = 16
 
 [loud]
-font-config-loud = 'CHARTER 16'
+font-config = 'CHARTER 16'
 #+end_src
 
 As environment variables:
 
 #+begin_src sh
-$ gott -t font.toml -o shell
+$ gott -t example.toml -o shell
 font_config='Charter 16'
 font_family='Charter'
-loud_font_config_loud='CHARTER 16'
 font_size='16'
+loud_font_config='CHARTER 16'
 #+end_src
 
 As a renderer:
 
 #+begin_src text
-$ cat file.txt
-{{.font.family}}
-$ gott -t font.toml -r file.txt
-Charter
+$ cat xresources.template
+URxvt.font: xft:{{.font.family}}:size={{.font.size}}
+
+{{range $i, $color := .colors.solarized}}
+*.color{{$i}}: {{$color}}
+{{- end}}
+
+$ gott -t example.toml -r xresources.template
+URxvt.font: xft:Triplicate:size=12
+
+*.color0: #eee8d5
+*.color1: #dc322f
+*.color2: #859900
+*.color3: #b58900
+*.color4: #268bd2
+*.color5: #d33682
+*.color6: #2aa198
+*.color7: #eee8d5
+*.color8: #fdf6e3
+*.color9: #cb4b16
+*.color10: #93a1a1
+*.color11: #839496
+*.color12: #839496
+*.color13: #6c71c4
+*.color14: #93a1a1
+*.color15: #fdf6e3
 #+end_src
