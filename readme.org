@@ -1,4 +1,4 @@
-gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/template][go templates]] in [[https://github.com/toml-lang/toml][toml]] files. It also bundles the [[https://pkg.go.dev/text/template][sprig]] template functions.
+gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/template][go templates]] in [[https://github.com/toml-lang/toml][toml]] files. It also bundles the [[http://masterminds.github.io/sprig/][sprig]] template functions.
 
 ** Example
 

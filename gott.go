@@ -8,12 +8,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
 	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/otaviokr/topological-sort/toposort"
 )
 
 var verbose bool = false
@@ -117,7 +119,58 @@ func (c config) Render(tmpl *template.Template, template_text string) string {
 	return result.String()
 }
 
-// Have a config render itself
+func (c config) inferRenderOrder() []string {
+	depMap := map[string][]string{}
+
+	for k, v := range c {
+		depMap[k] = []string{}
+
+		identPattern := "({{| ).([a-zA-Z0-9]+)"
+		identRe := regexp.MustCompile(identPattern)
+
+		vlog("%s", fmt.Sprintf("%v", v))
+		matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
+		if matches == nil {
+			depMap[k]= []string{}
+		}
+
+		for _, groups := range matches {
+			dep := groups[2]
+			if _, ok := c[dep]; ok {
+				if dep == k {
+					continue
+				}
+				add := true
+				for _, v := range depMap[k] {
+					if v == dep {
+						add = false
+					}
+				}
+				if add {
+					depMap[k] = append(depMap[k], dep)
+				}
+			}
+		}
+	}
+
+	for k, v := range depMap {
+		vlog("%s: %s", k, fmt.Sprintf("%v", v))
+	}
+
+	// got lazy
+	sorted, err := toposort.KahnSort(depMap)
+	if err != nil {
+		panic(err)
+	}
+
+	for left, right := 0, len(sorted)-1; left < right; left, right = left+1, right-1 {
+		sorted[left], sorted[right] = sorted[right], sorted[left]
+	}
+
+	vlog("%v", sorted)
+	return sorted
+}
+
 func realizeConfig(m map[string]interface{}, config config, path []string, tmpl *template.Template) map[string]interface{} {
 	for k, v := range m {
 		switch v := v.(type) {
@@ -206,7 +259,15 @@ func main() {
 
 	config := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
-	realizeConfig(config, config, []string{}, tmpl)
+
+	for _, k := range config.inferRenderOrder() {
+		nested, is_map := config[k].(map[string]interface{})
+		if is_map {
+			realizeConfig(nested, config, []string{k}, tmpl)
+		} else {
+			// fill me in to render top level render values
+		}
+	}
 
 	for _, p := range promotions {
 		config = config.Promote(strings.Split(p, "."))
