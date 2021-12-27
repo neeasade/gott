@@ -9,7 +9,7 @@ family = "Triplicate"
 size = 12
 
 # references can be local, or global
-config = "{{.family}}-{{.size}}"
+config = "{{.family}} {{.size}}"
 
 [loud]
 font-config = "{{.font.config | upper}}"
@@ -45,7 +45,7 @@ Usage of gott:
 *** toml
 
 #+begin_src toml
-$ gott -t example.toml -o toml
+# $ gott -t example.toml -o toml
 [font]
 config = 'Triplicate 12'
 family = 'Triplicate'
