@@ -2,7 +2,7 @@ gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/t
 
 ** Example
 
-#+begin_src conf-toml
+#+begin_src toml
 # example.toml
 [font]
 family = "Triplicate"
@@ -44,7 +44,7 @@ Usage of gott:
 
 *** toml
 
-#+begin_src conf-toml
+#+begin_src toml
 $ gott -t example.toml -o toml
 [font]
 config = 'Triplicate 16'
@@ -69,7 +69,7 @@ loud_font_config='TRIPLICATE 16'
 
 Let's add another toml file:
 
-#+begin_src conf-toml
+#+begin_src toml
 # colors.toml
 [colors]
 solarized = [
