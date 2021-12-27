@@ -57,45 +57,65 @@ func (c config) Flatten() map[string]string {
 	return results
 }
 
+func (c config) View(kind string) (string, error) {
+	switch kind {
+	case "toml":
+		b, err := toml.Marshal(c)
+		if err != nil {
+			panic(err)
+		}
+		return string(b), nil
+	case "keys":
+		keys := []string{}
+		for k, _ := range c.Flatten() {
+			keys = append(keys, k)
+		}
+		return strings.Join(keys, "\n") + "\n", nil
+	case "shell":
+		var b bytes.Buffer
+		// todo: this should handle arrays and 1d tables
+		for k, v := range c.Flatten() {
+			k = strings.ReplaceAll(k, ".", "_")
+			// todo: meh on this replace value
+			k = strings.ReplaceAll(k, "-", "_")
+			v = strings.ReplaceAll(v, "'", "'\\''")
+			fmt.Fprintf(&b, "%s='%s'\n", k, v)
+		}
+		return b.String(), nil
+	}
+	return "", errors.New("invalid view requested")
+}
+
 func (c config) Promote(path []string) config {
 	result := config{}
 	mergo.Merge(&result, c)
 
-	zoom, _ := c.Narrow(path)
+	zoom, _, _ := c.Dig(path)
 	if err := mergo.Merge(&c, zoom); err != nil {
 		panic(err)
 	}
 	return c
 }
 
-func (c config) pathExists(path []string) bool {
-	var dig map[string]interface{} = c
-	for _, key := range path {
-		if v, ok := dig[key]; ok { // ok will be false because 1 is not in the map.
-			nested, is_map := v.(map[string]interface{})
-			if is_map {
-				dig = nested
+func (c config) Dig(path []string) (result config, is_map bool, error error) {
+	if v, ok := c[path[0]]; ok {
+		m, is_map := v.(map[string]interface{})
+		if is_map {
+			if len(path) == 1 {
+				return config(m), true, nil
+			} else {
+				return config(m).Dig(path[1:])
 			}
 		} else {
-			return false
+			if len(path) == 1 {
+				return nil, false, nil
+			} else {
+				return nil, false, errors.New("not reached")
+			}
 		}
 	}
-	return true
-}
 
-func (c config) Narrow(path []string) (config, error) {
-	// result := config{}
-	// mergo.Merge(&result, c)
-
-	var dig map[string]interface{} = c
-	for _, key := range path {
-		if v, ok := dig[key]; ok { // ok will be false because 1 is not in the map.
-			dig = v.(map[string]interface{})
-		} else {
-			return nil, errors.New("not reached")
-		}
-	}
-	return dig, nil
+	return nil, false, errors.New("Bad path")
 }
 
 func makeTemplate() *template.Template {
@@ -154,7 +174,7 @@ func qualifyConfig(m map[string]interface{}, c config, path []string) map[string
 		case map[string]interface{}:
 			m[k] = qualifyConfig(v, c, append(path, k))
 		case string:
-			parent, _ := c.Narrow(path)
+			parent, _, _ := c.Dig(path)
 
 			identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
 
@@ -162,6 +182,7 @@ func qualifyConfig(m map[string]interface{}, c config, path []string) map[string
 
 			if len(matches) > 0 {
 				name := strings.Join(append(path, k), ".")
+				vlog("")
 				vlog("qualifying %s: %s", name, v)
 			}
 
@@ -172,19 +193,29 @@ func qualifyConfig(m map[string]interface{}, c config, path []string) map[string
 				matchPath := strings.Split(groups[2][1:], ".")
 				matchKey := matchPath[0]
 
-				vlog("groups: %v", groups)
-				vlog("parent: %v", parent)
-				vlog("path, key: %v %s", path, k)
-				vlog("matchkey: %s", matchKey)
-				if matchKey != k {
-					if !c.pathExists(matchPath) {
-						if _, ok := parent[matchKey]; ok {
-							new := "." + strings.Join(append(path, matchKey), ".")
-							vlog("qualifying %s to %s", matchKey, new)
-							m[k] = strings.ReplaceAll(m[k].(string), matchPrefix+"."+matchKey, matchPrefix+new)
-						}
+				vlog("parent: %s: %v", strings.Join(path, "."), parent)
+				vlog("looking at: %s", strings.Join(append(path, k), "."))
+				vlog("matchKey, matchPath: %s, %v", matchKey, groups[2][1:])
+
+				disqualify := func(cond bool, message string) bool {
+					if cond {
+						vlog("disqualified: %s", message)
 					}
+					return cond
 				}
+
+				_, in_parent := parent[matchKey]
+				_, digIsMap, digErr := c.Dig(matchPath)
+
+				if disqualify(matchKey == k, "self") ||
+					disqualify(!in_parent, "not present in parent") ||
+					disqualify(digErr == nil && !digIsMap, "matchPath exists in map, and is a value") {
+					continue
+				}
+
+				new := "." + strings.Join(append(path, matchKey), ".")
+				vlog("qualifying %s to %s", matchKey, new)
+				m[k] = strings.ReplaceAll(m[k].(string), matchPrefix+"."+matchKey, matchPrefix+new)
 			}
 		}
 	}
@@ -275,6 +306,7 @@ func main() {
 	config := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
 	qualifyConfig(config, config, []string{})
+	vlog(config.View("toml"))
 	realizeConfig(config, config, []string{}, tmpl)
 
 	for _, p := range promotions {
@@ -282,34 +314,21 @@ func main() {
 	}
 
 	if narrow != "" {
-		c, err := config.Narrow(strings.Split(narrow, "."))
+		c, is_map, err := config.Dig(strings.Split(narrow, "."))
 		if err != nil {
 			panic(err)
+		}
+		if ! is_map {
+			glog.Fatalf("Narrowed to a non-map value! %s", narrow)
 		}
 		config = c
 	}
 
-	switch action {
-	case "toml":
-		b, err := toml.Marshal(config)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Print(string(b))
-	case "keys":
-		for k, _ := range config.Flatten() {
-			fmt.Println(k)
-		}
-	case "shell":
-		// todo: this should handle arrays and 1d tables
-		for k, v := range config.Flatten() {
-			k = strings.ReplaceAll(k, ".", "_")
-			// // meh on this replace value
-			k = strings.ReplaceAll(k, "-", "_")
-			v = strings.ReplaceAll(v, "'", "'\\''")
-			fmt.Printf("%s='%s'\n", k, v)
-		}
+	view, err := config.View(action)
+	if err != nil {
+		panic(err)
 	}
+	fmt.Print(view)
 
 	for _, file := range renderTargets {
 		bytes, err := os.ReadFile(file)
