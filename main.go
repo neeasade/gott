@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"github.com/Masterminds/sprig"
 	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/otaviokr/topological-sort/toposort"
 )
 
 var verbose bool = false
@@ -61,21 +61,41 @@ func (c config) Promote(path []string) config {
 	result := config{}
 	mergo.Merge(&result, c)
 
-	if err := mergo.Merge(&c, c.Narrow(path)); err != nil {
+	zoom, _ := c.Narrow(path)
+	if err := mergo.Merge(&c, zoom); err != nil {
 		panic(err)
 	}
 	return c
 }
 
-func (c config) Narrow(path []string) config {
-	result := config{}
-	mergo.Merge(&result, c)
-
-	var dig map[string]interface{} = result
+func (c config) pathExists(path []string) bool {
+	var dig map[string]interface{} = c
 	for _, key := range path {
-		dig = dig[key].(map[string]interface{})
+		if v, ok := dig[key]; ok { // ok will be false because 1 is not in the map.
+			nested, is_map := v.(map[string]interface{})
+			if is_map {
+				dig = nested
+			}
+		} else {
+			return false
+		}
 	}
-	return dig
+	return true
+}
+
+func (c config) Narrow(path []string) (config, error) {
+	// result := config{}
+	// mergo.Merge(&result, c)
+
+	var dig map[string]interface{} = c
+	for _, key := range path {
+		if v, ok := dig[key]; ok { // ok will be false because 1 is not in the map.
+			dig = v.(map[string]interface{})
+		} else {
+			return nil, errors.New("not reached")
+		}
+	}
+	return dig, nil
 }
 
 func makeTemplate() *template.Template {
@@ -124,57 +144,51 @@ func (c config) Render(tmpl *template.Template, template_text string) string {
 	return result.String()
 }
 
-func (c config) inferRenderOrder() []string {
-	depMap := map[string][]string{}
+func qualifyConfig(m map[string]interface{}, c config, path []string) map[string]interface{} {
+	for k, v := range m {
+		switch v := v.(type) {
+		case []interface{}:
+		// for i, v := range v {
+		// 	m[k][i] = qualifyConfig(v, config, path)
+		// }
+		case map[string]interface{}:
+			m[k] = qualifyConfig(v, c, append(path, k))
+		case string:
+			parent, _ := c.Narrow(path)
 
-	for k, v := range c {
-		depMap[k] = []string{}
+			identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
 
-		identPattern := "({{| ).([a-zA-Z0-9]+)"
-		identRe := regexp.MustCompile(identPattern)
+			matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
 
-		vlog("%s", fmt.Sprintf("%v", v))
-		matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
-		if matches == nil {
-			depMap[k]= []string{}
-		}
+			if len(matches) > 0 {
+				name := strings.Join(append(path, k), ".")
+				vlog("qualifying %s: %s", name, v)
+			}
 
-		for _, groups := range matches {
-			dep := groups[2]
-			if _, ok := c[dep]; ok {
-				if dep == k {
-					continue
-				}
-				add := true
-				for _, v := range depMap[k] {
-					if v == dep {
-						add = false
+			for _, groups := range matches {
+				// result[2*n:2*n+1]
+				// match := groups[0]
+				matchPrefix := groups[1]
+				matchPath := strings.Split(groups[2][1:], ".")
+				matchKey := matchPath[0]
+
+				vlog("groups: %v", groups)
+				vlog("parent: %v", parent)
+				vlog("path, key: %v %s", path, k)
+				vlog("matchkey: %s", matchKey)
+				if matchKey != k {
+					if !c.pathExists(matchPath) {
+						if _, ok := parent[matchKey]; ok {
+							new := "." + strings.Join(append(path, matchKey), ".")
+							vlog("qualifying %s to %s", matchKey, new)
+							m[k] = strings.ReplaceAll(m[k].(string), matchPrefix+"."+matchKey, matchPrefix+new)
+						}
 					}
-				}
-				if add {
-					depMap[k] = append(depMap[k], dep)
 				}
 			}
 		}
 	}
-
-	for k, v := range depMap {
-		vlog("%s: %s", k, fmt.Sprintf("%v", v))
-	}
-
-	// got lazy
-	sorted, err := toposort.KahnSort(depMap)
-	if err != nil {
-		panic(err)
-	}
-
-	// reverse
-	for left, right := 0, len(sorted)-1; left < right; left, right = left+1, right-1 {
-		sorted[left], sorted[right] = sorted[right], sorted[left]
-	}
-
-	vlog("%v", sorted)
-	return sorted
+	return m
 }
 
 func realizeConfig(m map[string]interface{}, config config, path []string, tmpl *template.Template) map[string]interface{} {
@@ -193,7 +207,7 @@ func realizeConfig(m map[string]interface{}, config config, path []string, tmpl 
 
 				name := strings.Join(append(path, k), ".")
 				vlog("rendering %s: %s", name, v)
-				m[k] = config.Promote(path).Render(tmpl, v)
+				m[k] = config.Render(tmpl, v)
 				if m[k] != v {
 					vlog("   result %s: %s", name, m[k])
 				}
@@ -260,22 +274,19 @@ func main() {
 
 	config := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
-
-	for _, k := range config.inferRenderOrder() {
-		nested, is_map := config[k].(map[string]interface{})
-		if is_map {
-			realizeConfig(nested, config, []string{k}, tmpl)
-		} else {
-			// fill me in to render top level render values
-		}
-	}
+	qualifyConfig(config, config, []string{})
+	realizeConfig(config, config, []string{}, tmpl)
 
 	for _, p := range promotions {
 		config = config.Promote(strings.Split(p, "."))
 	}
 
 	if narrow != "" {
-		config = config.Narrow(strings.Split(narrow, "."))
+		c, err := config.Narrow(strings.Split(narrow, "."))
+		if err != nil {
+			panic(err)
+		}
+		config = c
 	}
 
 	switch action {
@@ -305,7 +316,7 @@ func main() {
 		if err != nil {
 			glog.Fatalf("render file not found: %s", file)
 		}
-		fmt.Println(config.Render(makeTemplate(), string(bytes)))
+		fmt.Println(config.Render(tmpl, string(bytes)))
 	}
 
 	if queryString != "" {
@@ -318,10 +329,10 @@ func main() {
 		} else {
 			queryString = "{{." + queryString + "}}"
 		}
-		fmt.Println(config.Render(makeTemplate(), queryString))
+		fmt.Println(config.Render(tmpl, queryString))
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(config.Render(makeTemplate(), queryStringPlain))
+		fmt.Println(config.Render(tmpl, queryStringPlain))
 	}
 }
