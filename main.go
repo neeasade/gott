@@ -58,6 +58,9 @@ func (c config) Flatten() map[string]string {
 }
 
 func (c config) Promote(path []string) config {
+	result := config{}
+	mergo.Merge(&result, c)
+
 	if err := mergo.Merge(&c, c.Narrow(path)); err != nil {
 		panic(err)
 	}
@@ -65,7 +68,10 @@ func (c config) Promote(path []string) config {
 }
 
 func (c config) Narrow(path []string) config {
-	var dig map[string]interface{} = c
+	result := config{}
+	mergo.Merge(&result, c)
+
+	var dig map[string]interface{} = result
 	for _, key := range path {
 		dig = dig[key].(map[string]interface{})
 	}
@@ -106,7 +112,6 @@ func makeTemplate() *template.Template {
 	// funcMap["dec"] = func(i interface{}) int64 { return toInt64(i) - 1 }
 
 	return template.New("🌳").Option("missingkey=zero").Funcs(funcMap)
-	// .Parse(template_text)
 }
 
 func (c config) Render(tmpl *template.Template, template_text string) string {
@@ -163,6 +168,7 @@ func (c config) inferRenderOrder() []string {
 		panic(err)
 	}
 
+	// reverse
 	for left, right := 0, len(sorted)-1; left < right; left, right = left+1, right-1 {
 		sorted[left], sorted[right] = sorted[right], sorted[left]
 	}
@@ -200,15 +206,10 @@ func realizeConfig(m map[string]interface{}, config config, path []string, tmpl 
 func parseToml(tomlFiles, tomlText []string) config {
 	result := map[string]interface{}{}
 
-	// reverse tomlFiles
-	for left, right := 0, len(tomlFiles)-1; left < right; left, right = left+1, right-1 {
-		tomlFiles[left], tomlFiles[right] = tomlFiles[right], tomlFiles[left]
-	}
-
 	for _, file := range tomlFiles {
 		bytes, err := os.ReadFile(file)
 		if err != nil {
-			glog.Fatalf("TOML file not found: %s", file)
+			glog.Fatalf("err reading TOML file: %s", file)
 		}
 		// "prepend"
 		tomlText = append([]string{string(bytes)}, tomlText...)
@@ -321,6 +322,6 @@ func main() {
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(config.Render(makeTemplate(), "queryPlain"))
+		fmt.Println(config.Render(makeTemplate(), queryStringPlain))
 	}
 }
