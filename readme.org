@@ -1,11 +1,11 @@
-gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/template][go templates]] in [[https://github.com/toml-lang/toml][toml]] files. It also bundles the [[http://masterminds.github.io/sprig/][sprig]] template functions.
+gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/template][go templates]] in [[https://github.com/toml-lang/toml][toml]] files with table-local and global scope. It also bundles the [[http://masterminds.github.io/sprig/][sprig]] template functions.
 
 ** Example
 
 #+begin_src conf-toml
 # example.toml
 [font]
-family = "Charter"
+family = "Triplicate"
 size = 16
 
 # references can be local, or global
@@ -14,53 +14,69 @@ config = "{{.family}}-{{.size}}"
 [loud]
 font-config = "{{.font.config | upper}}"
 
-[colors]
-solarized = [
-    "#eee8d5",
-    "#dc322f",
-    "#859900",
-    "#b58900",
-    "#268bd2",
-    "#d33682",
-    "#2aa198",
-    "#eee8d5",
-    "#fdf6e3",
-    "#cb4b16",
-    "#93a1a1",
-    "#839496",
-    "#839496",
-    "#6c71c4",
-    "#93a1a1",
-    "#fdf6e3"
-]
+#+end_src
+
+** Usage
+
+#+begin_src sh
+Usage of gott:
+  -t string
+    	Add a toml file to consider
+  -T string
+    	Add raw toml to consider
+  -c	skip caching
+  -n string
+    	Narrow the namespaces to consider
+  -p string
+    	Promote a namespace to the top level
+  -o string
+    	Output type <shell|toml|keys>
+  -q string
+    	query a value (formatted render: '{{.%s}}')
+  -R string
+    	Render a string
+  -r file
+    	Render a file
+  -v	be verbose
 #+end_src
 
 ** Output types
 
-resulting toml:
+*** toml
 
 #+begin_src conf-toml
 $ gott -t example.toml -o toml
 [font]
-config = 'Charter 16'
-family = 'Charter'
+config = 'Triplicate 16'
+family = 'Triplicate'
 size = 16
 
 [loud]
-font-config = 'CHARTER 16'
+font-config = 'TRIPLICATE 16'
 #+end_src
 
-As environment variables:
+*** shell
 
 #+begin_src sh
 $ gott -t example.toml -o shell
-font_config='Charter 16'
-font_family='Charter'
+font_config='Triplicate 16'
+font_family='Triplicate'
 font_size='16'
-loud_font_config='CHARTER 16'
+loud_font_config='TRIPLICATE 16'
 #+end_src
 
-As a renderer:
+*** template renderer
+
+Let's add another toml file:
+
+#+begin_src conf-toml
+# colors.toml
+[colors]
+solarized = [
+    "#eee8d5", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5",
+    "#fdf6e3", "#cb4b16", "#93a1a1", "#839496", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3"
+]
+#+end_src
 
 #+begin_src text
 $ cat xresources.template
@@ -70,7 +86,7 @@ URxvt.font: xft:{{.font.family}}:size={{.font.size}}
 *.color{{$i}}: {{$color}}
 {{- end}}
 
-$ gott -t example.toml -r xresources.template
+$ gott -t colors.toml -t example.toml -r xresources.template
 URxvt.font: xft:Triplicate:size=12
 
 *.color0: #eee8d5
@@ -90,3 +106,13 @@ URxvt.font: xft:Triplicate:size=12
 *.color14: #93a1a1
 *.color15: #fdf6e3
 #+end_src
+
+**  Shoutouts and Lore
+
+This project exists so I can learn some go. The initial incarnation was written on a train with no internet, where I scrounged through ~go doc~ like a caveman. My default dynamic+functional style does not translate well to go, there has been some head banging. The idea of ~gott~ is somewhat dynamic in itself, so might be a bad problem for go. Oh well.
+
+People who helped through feedback and iteration:
+
+- @crockeo
+- @skaasten
+- @sector-f
