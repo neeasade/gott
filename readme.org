@@ -6,7 +6,7 @@ gott is a *go toml transformer*. It adds support for [[https://pkg.go.dev/text/t
 # example.toml
 [font]
 family = "Triplicate"
-size = 16
+size = 12
 
 # references can be local, or global
 config = "{{.family}}-{{.size}}"
@@ -47,22 +47,22 @@ Usage of gott:
 #+begin_src toml
 $ gott -t example.toml -o toml
 [font]
-config = 'Triplicate 16'
+config = 'Triplicate 12'
 family = 'Triplicate'
-size = 16
+size = 12
 
 [loud]
-font-config = 'TRIPLICATE 16'
+font-config = 'TRIPLICATE 12'
 #+end_src
 
 *** shell
 
 #+begin_src sh
 $ gott -t example.toml -o shell
-font_config='Triplicate 16'
+font_config='Triplicate 12'
 font_family='Triplicate'
-font_size='16'
-loud_font_config='TRIPLICATE 16'
+font_size='12'
+loud_font_config='TRIPLICATE 12'
 #+end_src
 
 *** template renderer
@@ -113,6 +113,6 @@ This project exists so I can learn some go. The initial incarnation was written 
 
 People who helped through feedback and iteration:
 
-- @crockeo
-- @skaasten
-- @sector-f
+- [[https://github.com/crockeo][@crockeo]]
+- [[https://github.com/skaasten][@skaasten]]
+- [[https://github.com/sector-f][@sector-f]]
