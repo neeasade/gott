@@ -8,13 +8,14 @@ fi
 toml=$(cat <<EOF
 ref = '{{.b.localA}}'
 ref1 = '{{.a.dashed-ident}}'
-ref2 = '{{.a.0}}'
-negative-one = '{{sub .a.0 1}}'
+ref2 = '{{.a.zero}}'
+negative-one = '{{sub .a.zero 1}}'
 
 [a]
-0 = '{{.zero}}'
 a = 'wow!!'
 a2 = 'ok {{.a}}'
+a3 = [ 'fancy', 'words' ]
+a4 = '{{.a3.0}}'
 dashed-ident = '{{.a}}'
 one = 1
 zero = '{{sub .one 1}}'
@@ -33,9 +34,10 @@ ref = 'wow!!'
 ref1 = 'wow!!'
 ref2 = '0'
 [a]
-0 = '0'
 a = 'wow!!'
 a2 = 'ok wow!!'
+a3 = ['fancy', 'words']
+a4 = 'fancy'
 dashed-ident = 'wow!!'
 one = 1
 zero = '0'
@@ -69,5 +71,5 @@ esac
 if ! test "$expected" = "$result"; then
     echo "test failed!"
     echo "left: expected, right: result"
-    diff -w -y <(echo "$expected") <(echo "$result")
+    diff -y <(echo "$expected") <(echo "$result")
 fi

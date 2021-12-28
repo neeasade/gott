@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -98,7 +99,7 @@ func (c config) Promote(path []string) config {
 }
 
 func (c config) Dig(path []string) (result config, is_map bool, error error) {
-	if (len(path) == 0) {
+	if len(path) == 0 {
 		return c, true, nil
 	}
 
@@ -181,13 +182,14 @@ func (c config) Transform(m map[string]interface{}, path []string, operation fun
 		switch v := v.(type) {
 		case map[string]interface{}:
 			c.Transform(v, append(path, k), operation)
-		case string: {
-			result, err := operation(v, c, append(path, k))
-			if err != nil {
-				panic(err)
+		case string:
+			{
+				result, err := operation(v, c, append(path, k))
+				if err != nil {
+					panic(err)
+				}
+				m[k] = result
 			}
-			m[k] = result
-		}
 		}
 	}
 }
@@ -217,21 +219,30 @@ func identTransform(v string, c config, path []string) (string, error) {
 	// match of the entire expression
 	for _, groups := range matches {
 		toString := func(n int) string {
-			return v[delta+groups[2*n]:delta+groups[2*n+1]]
+			return v[delta+groups[2*n] : delta+groups[2*n+1]]
 		}
 		fullMatch := toString(0)
 		ident := toString(2)
-		start := groups[2*2]+delta
-		end := groups[2*2+1]+delta
+		start := groups[2*2] + delta
+		end := groups[2*2+1] + delta
 		length := end - start
 
-		vlog("fullmatch: %s", fullMatch)
+		// vlog("fullmatch: %s", fullMatch)
 
 		// you're always replacing at the ident location, it's just a question of adding the ()
-		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{" + ident + "}}"
+		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{"+ident+"}}"
 
 		parts := strings.Split(ident[1:], ".")
-		new := fmt.Sprintf("index . \"%s\"", strings.Join(parts, "\" \""))
+		new := "index . "
+		for _, p := range parts {
+			pi, err := strconv.Atoi(p)
+			if err == nil {
+				new = fmt.Sprintf("%s %d", new, pi)
+			} else {
+				new = fmt.Sprintf("%s \"%s\"", new, p)
+			}
+		}
+
 		if addingBraces {
 			new = fmt.Sprintf("(%s)", new)
 		}
@@ -246,7 +257,7 @@ func identTransform(v string, c config, path []string) (string, error) {
 func qualifyTransform(v string, c config, path []string) (string, error) {
 	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9-]+)+)")
 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
-	parent, _, _ := c.Dig(path[0:len(path)-1])
+	parent, _, _ := c.Dig(path[0 : len(path)-1])
 
 	if len(matches) > 0 {
 		name := strings.Join(path, ".")
@@ -256,10 +267,10 @@ func qualifyTransform(v string, c config, path []string) (string, error) {
 	delta := 0
 	for _, groups := range matches {
 		toString := func(n int) string {
-			return v[delta+groups[2*n]:delta+groups[2*n+1]]
+			return v[delta+groups[2*n] : delta+groups[2*n+1]]
 		}
-		start := groups[2*2]+delta
-		end := groups[2*2+1]+delta
+		start := groups[2*2] + delta
+		end := groups[2*2+1] + delta
 		length := end - start
 
 		matchPath := strings.Split(toString(2)[1:], ".")
@@ -285,7 +296,7 @@ func qualifyTransform(v string, c config, path []string) (string, error) {
 			continue
 		}
 
-		new := "." + strings.Join(append(path[0:len(path)-1], matchKey), ".")
+		new := "." + strings.Join(append(path[0:len(path)-1], matchPath...), ".")
 		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length
 	}
@@ -357,7 +368,7 @@ func main() {
 	c.Transform(c, []string{}, identTransform)
 	vlog(c.View("toml"))
 
-	realizeTransform := func (v string, c config, path []string) (string, error) {
+	realizeTransform := func(v string, c config, path []string) (string, error) {
 		// oof
 		for strings.Contains(v, "{{") {
 			original := v
@@ -382,7 +393,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		if ! is_map {
+		if !is_map {
 			glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
 		}
 		c = d
