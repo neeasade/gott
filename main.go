@@ -175,86 +175,69 @@ func (c config) Render(tmpl *template.Template, template_text string) string {
 	return result.String()
 }
 
-func qualifyConfig(m map[string]interface{}, c config, path []string) map[string]interface{} {
+// transform the string values in the map
+func (c config) Transform(m map[string]interface{}, path []string, operation func(string, config, []string) (string, error)) {
 	for k, v := range m {
 		switch v := v.(type) {
-		case []interface{}:
-		// for i, v := range v {
-		// 	m[k][i] = qualifyConfig(v, config, path)
-		// }
 		case map[string]interface{}:
-			m[k] = qualifyConfig(v, c, append(path, k))
-		case string:
-			parent, _, _ := c.Dig(path)
-
-			identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
-
-			matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
-
-			if len(matches) > 0 {
-				name := strings.Join(append(path, k), ".")
-				vlog("")
-				vlog("qualifying %s: %s", name, v)
+			c.Transform(v, append(path, k), operation)
+		case string: {
+			result, err := operation(v, c, path)
+			if err != nil {
+				panic(err)
 			}
-
-			for _, groups := range matches {
-				matchPrefix := groups[1]
-				matchPath := strings.Split(groups[2][1:], ".")
-				matchKey := matchPath[0]
-
-				vlog("parent: %s: %v", strings.Join(path, "."), parent)
-				vlog("looking at: %s", strings.Join(append(path, k), "."))
-				vlog("matchKey, matchPath: %s, %v", matchKey, groups[2][1:])
-
-				disqualify := func(cond bool, message string) bool {
-					if cond {
-						vlog("disqualified: %s", message)
-					}
-					return cond
-				}
-
-				_, in_parent := parent[matchKey]
-				_, digIsMap, digErr := c.Dig(matchPath)
-
-				if disqualify(matchKey == k, "self") ||
-					disqualify(!in_parent, "not present in parent") ||
-					disqualify(digErr == nil && !digIsMap, "matchPath exists in map, and is a value") {
-					continue
-				}
-
-				new := "." + strings.Join(append(path, matchKey), ".")
-				vlog("qualifying %s to %s", matchKey, new)
-				m[k] = strings.ReplaceAll(m[k].(string), matchPrefix+"."+matchKey, matchPrefix+new)
-			}
+			m[k] = result
+		}
 		}
 	}
-	return m
 }
 
-func realizeConfig(m map[string]interface{}, config config, path []string, tmpl *template.Template) map[string]interface{} {
-	for k, v := range m {
-		switch v := v.(type) {
-		// case []interface{}:
-		// for i, v := range v {
-		// 	// m[k][i] = walk(v, config, path)
-		// }
-		case map[string]interface{}:
-			m[k] = realizeConfig(v, config, append(path, k), tmpl)
-		case string:
-			// oof
-			for strings.Contains(m[k].(string), "{{") {
-				v := m[k].(string)
+func qualifyTransform(v string, c config, path []string) (string, error) {
+	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
+	matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
+	parent, _, _ := c.Dig(path)
 
-				name := strings.Join(append(path, k), ".")
-				vlog("rendering %s: %s", name, v)
-				m[k] = config.Render(tmpl, v)
-				if m[k] != v {
-					vlog("   result %s: %s", name, m[k])
-				}
-			}
-		}
+	k := ""
+
+	if len(path) > 1 {
+		k = path[len(path)-1]
 	}
-	return m
+
+	if len(matches) > 0 {
+		name := strings.Join(path, ".")
+		vlog("\nqualifying %s: %s", name, v)
+	}
+
+	for _, groups := range matches {
+		matchPrefix := groups[1]
+		matchPath := strings.Split(groups[2][1:], ".")
+		matchKey := matchPath[0]
+
+		vlog("parent: %s: %v", strings.Join(path, "."), parent)
+		vlog("looking at: %s", strings.Join(path, "."))
+		vlog("matchKey, matchPath: %s, %v", matchKey, groups[2][1:])
+
+		disqualify := func(cond bool, message string) bool {
+			if cond {
+				vlog("disqualified: %s", message)
+			}
+			return cond
+		}
+
+		_, in_parent := parent[matchKey]
+		_, digIsMap, digErr := c.Dig(matchPath)
+
+		if disqualify(matchKey == k, "self") ||
+			disqualify(!in_parent, "not present in parent") ||
+			disqualify(digErr == nil && !digIsMap, "matchPath exists in map, and is a value") {
+			continue
+		}
+
+		new := "." + strings.Join(append(path, matchKey), ".")
+		vlog("qualifying %s to %s", matchKey, new)
+		v = strings.ReplaceAll(v, matchPrefix+"."+matchKey, matchPrefix+new)
+	}
+	return v, nil
 }
 
 func parseToml(tomlFiles, tomlText []string) config {
@@ -312,29 +295,45 @@ func main() {
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 	flag.Parse()
 
-	config := parseToml(tomlFiles, tomlText)
+	c := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
-	qualifyConfig(config, config, []string{})
-	vlog(config.View("toml"))
-	realizeConfig(config, config, []string{}, tmpl)
+
+	c.Transform(c, []string{}, qualifyTransform)
+	vlog(c.View("toml"))
+
+	realizeTransform := func (v string, c config, path []string) (string, error) {
+		// oof
+		for strings.Contains(v, "{{") {
+			original := v
+			name := strings.Join(path, ".")
+			vlog("rendering %s: %s", name, v)
+			v = c.Render(tmpl, v)
+			if original != v {
+				vlog("   result %s: %s", name, v)
+			}
+		}
+		return v, nil
+	}
+
+	c.Transform(c, []string{}, realizeTransform)
 
 	for _, p := range promotions {
-		config = config.Promote(strings.Split(p, "."))
+		c = c.Promote(strings.Split(p, "."))
 	}
 
 	if narrow != "" {
-		c, is_map, err := config.Dig(strings.Split(narrow, "."))
+		d, is_map, err := c.Dig(strings.Split(narrow, "."))
 		if err != nil {
 			panic(err)
 		}
 		if ! is_map {
-			glog.Fatalf("Narrowed to a non-map value! %s", narrow)
+			glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
 		}
-		config = c
+		c = d
 	}
 
 	if action != "" {
-		view, err := config.View(action)
+		view, err := c.View(action)
 		if err != nil {
 			panic(err)
 		}
@@ -346,7 +345,7 @@ func main() {
 		if err != nil {
 			glog.Fatalf("render file not found: %s", file)
 		}
-		fmt.Println(config.Render(tmpl, string(bytes)))
+		fmt.Println(c.Render(tmpl, string(bytes)))
 	}
 
 	if queryString != "" {
@@ -359,10 +358,10 @@ func main() {
 		} else {
 			queryString = "{{." + queryString + "}}"
 		}
-		fmt.Println(config.Render(tmpl, queryString))
+		fmt.Println(c.Render(tmpl, queryString))
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(config.Render(tmpl, queryStringPlain))
+		fmt.Println(c.Render(tmpl, queryStringPlain))
 	}
 }
