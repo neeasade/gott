@@ -198,7 +198,6 @@ func (c config) Transform(m map[string]interface{}, path []string, operation fun
 // you can't used dashes or numbers, even if they are keys in a table
 // invalid: {{.wow.0}} {{.wow-ok}}
 // but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
-// todo: consider slicing syntax here as well
 func identTransform(v string, c config, path []string) (string, error) {
 	identRe := regexp.MustCompile("({{)[^{}\\.]*((\\.[a-zA-Z0-9-]+)+)[^{}]*(}})")
 	// reference
@@ -412,7 +411,9 @@ func main() {
 		if err != nil {
 			glog.Fatalf("render file not found: %s", file)
 		}
-		fmt.Println(c.Render(tmpl, string(bytes)))
+
+		r, err := identTransform(string(bytes), c , []string{})
+		fmt.Println(c.Render(tmpl, r))
 	}
 
 	if queryString != "" {
