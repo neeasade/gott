@@ -24,7 +24,6 @@ Usage of gott:
     	Add a toml file to consider
   -T string
     	Add raw toml to consider
-  -c	skip caching
   -n string
     	Narrow the namespaces to consider
   -p string
