@@ -182,7 +182,7 @@ func (c config) Transform(m map[string]interface{}, path []string, operation fun
 		case map[string]interface{}:
 			c.Transform(v, append(path, k), operation)
 		case string: {
-			result, err := operation(v, c, path)
+			result, err := operation(v, c, append(path, k))
 			if err != nil {
 				panic(err)
 			}
@@ -207,10 +207,8 @@ func identTransform(v string, c config, path []string) (string, error) {
 	// 2	-	.some-test
 	// 3	-	}}
 
-
 	// have to be a little delicate -- tracking moving point of the edit as we replace larger
 	// strings at indexes
-	cursor := -1
 	delta := 0
 
 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
@@ -219,13 +217,15 @@ func identTransform(v string, c config, path []string) (string, error) {
 	// match of the entire expression
 	for _, groups := range matches {
 		toString := func(n int) string {
-			return v[groups[2*n]:groups[2*n+1]]
+			return v[delta+groups[2*n]:delta+groups[2*n+1]]
 		}
 		fullMatch := toString(0)
 		ident := toString(2)
-		start := groups[2*2]
-		end := groups[2*2+1]
+		start := groups[2*2]+delta
+		end := groups[2*2+1]+delta
 		length := end - start
+
+		vlog("fullmatch: %s", fullMatch)
 
 		// you're always replacing at the ident location, it's just a question of adding the ()
 		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{" + ident + "}}"
@@ -236,12 +236,7 @@ func identTransform(v string, c config, path []string) (string, error) {
 			new = fmt.Sprintf("(%s)", new)
 		}
 
-		if cursor == -1 {
-			cursor = start
-		}
-		cursor = cursor + delta
-
-		v = v[:cursor] + new + v[end:]
+		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length
 	}
 
@@ -249,29 +244,30 @@ func identTransform(v string, c config, path []string) (string, error) {
 }
 
 func qualifyTransform(v string, c config, path []string) (string, error) {
-	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
-	matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
-	parent, _, _ := c.Dig(path)
-
-	k := ""
-
-	if len(path) > 1 {
-		k = path[len(path)-1]
-	}
+	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9-]+)+)")
+	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
+	parent, _, _ := c.Dig(path[0:len(path)-1])
 
 	if len(matches) > 0 {
 		name := strings.Join(path, ".")
-		vlog("\nqualifying %s: %s", name, v)
+		vlog("\nqualifying .%s: %s", name, v)
 	}
 
+	delta := 0
 	for _, groups := range matches {
-		matchPrefix := groups[1]
-		matchPath := strings.Split(groups[2][1:], ".")
+		toString := func(n int) string {
+			return v[delta+groups[2*n]:delta+groups[2*n+1]]
+		}
+		start := groups[2*2]+delta
+		end := groups[2*2+1]+delta
+		length := end - start
+
+		matchPath := strings.Split(toString(2)[1:], ".")
 		matchKey := matchPath[0]
 
-		vlog("parent: %s: %v", strings.Join(path, "."), parent)
-		vlog("looking at: %s", strings.Join(path, "."))
-		vlog("matchKey, matchPath: %s, %v", matchKey, groups[2][1:])
+		vlog("parent: %v", parent)
+		vlog("looking at: .%s", strings.Join(path, "."))
+		vlog("matchKey, matchPath: %s, %v", matchKey, matchPath)
 
 		disqualify := func(cond bool, message string) bool {
 			if cond {
@@ -283,15 +279,15 @@ func qualifyTransform(v string, c config, path []string) (string, error) {
 		_, in_parent := parent[matchKey]
 		_, digIsMap, digErr := c.Dig(matchPath)
 
-		if disqualify(matchKey == k, "self") ||
+		if disqualify(matchKey == path[len(path)-1], "self") ||
 			disqualify(!in_parent, "not present in parent") ||
 			disqualify(digErr == nil && !digIsMap, "matchPath exists in map, and is a value") {
 			continue
 		}
 
-		new := "." + strings.Join(append(path, matchKey), ".")
-		vlog("qualifying %s to %s", matchKey, new)
-		v = strings.ReplaceAll(v, matchPrefix+"."+matchKey, matchPrefix+new)
+		new := "." + strings.Join(append(path[0:len(path)-1], matchKey), ".")
+		v = v[:start] + new + v[end:]
+		delta = delta + len(new) - length
 	}
 	return v, nil
 }

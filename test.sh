@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # sanity integration test
 
+if ! go build; then
+   exit 1
+fi
+
 toml=$(cat <<EOF
 ref = '{{.b.localA}}'
 ref1 = '{{.a.dashed-ident}}'
@@ -19,6 +23,7 @@ zero = '{{sub .one 1}}'
 a = '{{.a.a}}'
 b = 'b'
 localA = '{{.a}}'
+c = '{{.a}} {{.b}}'
 EOF
 )
 
@@ -38,6 +43,7 @@ zero = '0'
 [b]
 a = 'wow!!'
 b = 'b'
+c = 'wow!! b'
 localA = 'wow!!'
 EOF
 )
