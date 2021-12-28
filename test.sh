@@ -2,10 +2,16 @@
 # sanity integration test
 
 toml=$(cat <<EOF
-ok = '{{.b.localA}}'
+ref = '{{.b.localA}}'
+ref1 = '{{.a.dashed-ident}}'
+ref2 = '{{.a.0}}'
+negative-one = '{{sub .a.0 1}}'
+
 [a]
+0 = '{{.zero}}'
 a = 'wow!!'
 a2 = 'ok {{.a}}'
+dashed-ident = '{{.a}}'
 one = 1
 zero = '{{sub .one 1}}'
 
@@ -17,10 +23,15 @@ EOF
 )
 
 expected=$(cat <<EOF
-ok = 'wow!!'
+negative-one = '-1'
+ref = 'wow!!'
+ref1 = 'wow!!'
+ref2 = '0'
 [a]
+0 = '0'
 a = 'wow!!'
 a2 = 'ok wow!!'
+dashed-ident = 'wow!!'
 one = 1
 zero = '0'
 

@@ -192,6 +192,62 @@ func (c config) Transform(m map[string]interface{}, path []string, operation fun
 	}
 }
 
+// The go template default selection mechanism kinda sucks
+// you can't used dashes or numbers, even if they are keys in a table
+// invalid: {{.wow.0}} {{.wow-ok}}
+// but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
+// todo: consider slicing syntax here as well
+func identTransform(v string, c config, path []string) (string, error) {
+	identRe := regexp.MustCompile("({{)[^{}\\.]*((\\.[a-zA-Z0-9-]+)+)[^{}]*(}})")
+	// reference
+	// match: {{sub .a.some-test 1}}
+	// Match groups :
+	// 0	-	{{
+	// 1	-	.a.some-test
+	// 2	-	.some-test
+	// 3	-	}}
+
+
+	// have to be a little delicate -- tracking moving point of the edit as we replace larger
+	// strings at indexes
+	cursor := -1
+	delta := 0
+
+	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
+	// matches and submatches are identified by byte index pairs within the input string:
+	// result[2*n:2*n+1] identifies the indexes of the nth submatch. The pair for n==0 identifies the
+	// match of the entire expression
+	for _, groups := range matches {
+		toString := func(n int) string {
+			return v[groups[2*n]:groups[2*n+1]]
+		}
+		fullMatch := toString(0)
+		ident := toString(2)
+		start := groups[2*2]
+		end := groups[2*2+1]
+		length := end - start
+
+		// you're always replacing at the ident location, it's just a question of adding the ()
+		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{" + ident + "}}"
+
+		parts := strings.Split(ident[1:], ".")
+		new := fmt.Sprintf("index . \"%s\"", strings.Join(parts, "\" \""))
+		if addingBraces {
+			new = fmt.Sprintf("(%s)", new)
+		}
+
+		if cursor == -1 {
+			cursor = start
+		}
+		cursor = cursor + delta
+
+		v = v[:cursor] + new + v[end:]
+		delta = delta + len(new) - length
+	}
+
+	return v, nil
+}
+
 func qualifyTransform(v string, c config, path []string) (string, error) {
 	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9]+)+)")
 	matches := identRe.FindAllStringSubmatch(fmt.Sprintf("%v", v), -1)
@@ -299,6 +355,10 @@ func main() {
 	tmpl := makeTemplate()
 
 	c.Transform(c, []string{}, qualifyTransform)
+	vlog(c.View("toml"))
+
+	vlog("------")
+	c.Transform(c, []string{}, identTransform)
 	vlog(c.View("toml"))
 
 	realizeTransform := func (v string, c config, path []string) (string, error) {
