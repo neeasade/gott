@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// ok
+type config map[string]interface{}
+
 var verbose bool = false
 var glog *log.Logger = log.New(os.Stderr, "", 0)
 
@@ -41,18 +44,25 @@ func main() {
 	c := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
 
-	c.Transform(c, []string{}, qualifyTransform)
+	c.Transform(c, []interface{}{}, qualifyTransform)
 	vlog(c.View("toml"))
 
 	vlog("------")
-	c.Transform(c, []string{}, identTransform)
+	c.Transform(c, []interface{}{}, identTransform)
 	vlog(c.View("toml"))
 
-	realizeTransform := func(v string, c config, path []string) (string, error) {
+	realizeTransform := func(n interface{}, c config, path []interface{}) (interface{}, error) {
+		if fmt.Sprintf("%T", n) != "string" {
+			return n, nil
+		}
+
+		v := n.(string)
+
 		// oof
 		for strings.Contains(v, "{{") {
 			original := v
-			name := strings.Join(path, ".")
+			// name := strings.Join(path, ".")
+			name := toString(path)
 			vlog("rendering %s: %s", name, v)
 			v = c.Render(tmpl, v)
 			if original != v {
@@ -62,21 +72,18 @@ func main() {
 		return v, nil
 	}
 
-	c.Transform(c, []string{}, realizeTransform)
+	c.Transform(c, []interface{}{}, realizeTransform)
 
 	for _, p := range promotions {
-		c = c.Promote(strings.Split(p, "."))
+		c = c.Promote(toPath(p))
 	}
 
 	if narrow != "" {
-		d, is_map, err := c.Dig(strings.Split(narrow, "."))
+		d, err := Dig(c, strings.Split(narrow, "."))
 		if err != nil {
 			panic(err)
 		}
-		if !is_map {
-			glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
-		}
-		c = d
+		c = d.(config)
 	}
 
 	if action != "" {
@@ -93,8 +100,8 @@ func main() {
 			glog.Fatalf("render file not found: %s", file)
 		}
 
-		r, err := identTransform(string(bytes), c, []string{})
-		fmt.Println(c.Render(tmpl, r))
+		r, err := identTransform(string(bytes), c, []interface{}{})
+		fmt.Println(c.Render(tmpl, r.(string)))
 	}
 
 	if queryString != "" {

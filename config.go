@@ -11,12 +11,15 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// the most esteemed type that exists
-type config map[string]interface{}
-
 func (c config) Flatten() map[string]string {
 	results := map[string]string{}
-	flattenMap(results, c, "")
+
+	add := func(n interface{}, c config, path []interface{}) (interface{}, error) {
+		results[toString(path)] = fmt.Sprintf("%v", n)
+		return n, nil
+	}
+
+	c.Transform(c, []interface{}{}, add)
 	return results
 }
 
@@ -49,41 +52,71 @@ func (c config) View(kind string) (string, error) {
 	return "", errors.New("invalid view requested")
 }
 
-func (c config) Promote(path []string) config {
+func (c config) Promote(path []interface{}) config {
 	result := config{}
 	mergo.Merge(&result, c)
 
-	zoom, _, _ := c.Dig(path)
+	// todo: this should handle or complain about non-map results
+	zoom, _ := Dig(c, path)
+
 	if err := mergo.Merge(&c, zoom); err != nil {
 		panic(err)
 	}
 	return c
 }
 
-// todo: this could probably return interface, then is_map dies
-func (c config) Dig(path []string) (result config, is_map bool, error error) {
+func Set(n interface{}, path []interface{}, value interface{}) (interface{}, error) {
 	if len(path) == 0 {
-		return c, true, nil
+		return nil, errors.New("shouldn't be reached (path 0)")
 	}
 
-	if v, ok := c[path[0]]; ok {
-		m, is_map := v.(map[string]interface{})
-		if is_map {
-			if len(path) == 1 {
-				return config(m), true, nil
-			} else {
-				return config(m).Dig(path[1:])
-			}
+	switch n := n.(type) {
+	case config:
+		// there is no fallthrough in type switches
+		if len(path) == 1 {
+			n[path[0].(string)] = value
+			return nil, nil
 		} else {
-			if len(path) == 1 {
-				return nil, false, nil
-			} else {
-				return nil, false, errors.New("not reached")
-			}
+			return Set(n[path[0].(string)], path[1:], value)
 		}
+	case map[string]interface{}:
+		if len(path) == 1 {
+			n[path[0].(string)] = value
+			return nil, nil
+		} else {
+			return Set(n[path[0].(string)], path[1:], value)
+		}
+	case []interface{} :
+		if len(path) == 1 {
+			n[path[0].(int)] = value
+			return nil, nil
+		} else {
+			return Set(n[path[0].(int)], path[1:], value)
+		}
+	default:
+		vlog("weird type: %T", n)
+		return n, errors.New("Tried to set weird type")
 	}
 
-	return nil, false, errors.New("Bad path")
+	return nil, errors.New("shouldn't be reached")
+}
+
+func Dig(n interface{}, pathIn interface{}) (interface{}, error) {
+	path := pathIn.([]interface{})
+
+	if len(path) == 0 {
+		return n, nil
+	}
+
+	switch n := n.(type) {
+	    case map[string]interface{}:
+		return Dig(n[path[0].(string)], path[1:])
+	case []interface{} :
+		// todo -- coerce to int?
+		return Dig(n[path[0].(int)], path[1:])
+	    default:
+		return n, errors.New("not reached")
+	}
 }
 
 func (c config) Render(tmpl *template.Template, template_text string) string {
@@ -96,20 +129,34 @@ func (c config) Render(tmpl *template.Template, template_text string) string {
 	return result.String()
 }
 
-// transform the string values in the map
-// todo: this could probably act on interface as well
-func (c config) Transform(m map[string]interface{}, path []string, operation func(string, config, []string) (string, error)) {
-	for k, v := range m {
-		switch v := v.(type) {
-		case map[string]interface{}:
+func (c config) Transform(n interface{}, path []interface{}, operation func(interface{}, config, []interface{}) (interface{}, error)) {
+	// vlog("\ntransforming at %s: %T", toString(path), n)
+	switch n := n.(type) {
+	case config:
+		for k, v := range n {
+			// vlog("nesting: %s into %s", toString(path), toString(append(path, k)))
 			c.Transform(v, append(path, k), operation)
-		case string:
-			{
-				result, err := operation(v, c, append(path, k))
-				if err != nil {
-					panic(err)
-				}
-				m[k] = result
+		}
+	case map[string]interface{}:
+		for k, v := range n {
+			c.Transform(v, append(path, k), operation)
+		}
+	case []interface{}:
+		for i, v := range n {
+			c.Transform(v, append(path, i), operation)
+		}
+	default:
+		// hack: go up a level, set it to something
+		result, err := operation(n, c, path)
+		if err != nil {
+			panic(err)
+		}
+		if n != result {
+			vlog("updating node '%s': %v -> %v", toString(path), n, result)
+			// _, err = Set(c, path[0:len(path)-1], result)
+			_, err = Set(c, path, result)
+			if err != nil {
+				panic(err)
 			}
 		}
 	}

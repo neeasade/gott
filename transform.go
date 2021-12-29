@@ -11,7 +11,13 @@ import (
 // you can't used dashes or numbers, even if they are keys in a table
 // invalid: {{.wow.0}} {{.wow-ok}}
 // but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
-func identTransform(v string, c config, path []string) (string, error) {
+func identTransform(n interface{}, c config, path []interface{}) (interface{}, error) {
+	if fmt.Sprintf("%T", n) != "string" {
+		return n, nil
+	}
+
+	v := n.(string)
+
 	identRe := regexp.MustCompile("({{)[^{}\\.]*((\\.[a-zA-Z0-9-]+)+)[^{}]*(}})")
 	// reference
 	// match: {{sub .a.some-test 1}}
@@ -30,11 +36,11 @@ func identTransform(v string, c config, path []string) (string, error) {
 	// result[2*n:2*n+1] identifies the indexes of the nth submatch. The pair for n==0 identifies the
 	// match of the entire expression
 	for _, groups := range matches {
-		toString := func(n int) string {
+		indexToString := func(n int) string {
 			return v[delta+groups[2*n] : delta+groups[2*n+1]]
 		}
-		fullMatch := toString(0)
-		ident := toString(2)
+		fullMatch := indexToString(0)
+		ident := indexToString(2)
 		start := groups[2*2] + delta
 		end := groups[2*2+1] + delta
 		length := end - start
@@ -66,30 +72,36 @@ func identTransform(v string, c config, path []string) (string, error) {
 	return v, nil
 }
 
-func qualifyTransform(v string, c config, path []string) (string, error) {
+func qualifyTransform(n interface{}, c config, path []interface{}) (interface{}, error) {
+	if fmt.Sprintf("%T", n) != "string" {
+		return n, nil
+	}
+
+	v := n.(string)
+
 	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9-]+)+)")
 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
-	parent, _, _ := c.Dig(path[0 : len(path)-1])
+	parent, _ := Dig(c, path[0 : len(path)-1])
 
 	if len(matches) > 0 {
-		name := strings.Join(path, ".")
-		vlog("\nqualifying .%s: %s", name, v)
+		name := toString(path)
+		vlog("\nqualifying at node .%s: %s", name, v)
 	}
 
 	delta := 0
 	for _, groups := range matches {
-		toString := func(n int) string {
+		indexToString := func(n int) string {
 			return v[delta+groups[2*n] : delta+groups[2*n+1]]
 		}
 		start := groups[2*2] + delta
 		end := groups[2*2+1] + delta
 		length := end - start
 
-		matchPath := strings.Split(toString(2)[1:], ".")
+		matchPath := strings.Split(indexToString(2)[1:], ".")
 		matchKey := matchPath[0]
 
-		vlog("parent: %v", parent)
-		vlog("looking at: .%s", strings.Join(path, "."))
+		vlog("parent value: %v", parent)
+		vlog("looking at: .%s", toString(path))
 		vlog("matchKey, matchPath: %s, %v", matchKey, matchPath)
 
 		disqualify := func(cond bool, message string) bool {
@@ -99,8 +111,11 @@ func qualifyTransform(v string, c config, path []string) (string, error) {
 			return cond
 		}
 
-		_, in_parent := parent[matchKey]
-		_, digIsMap, digErr := c.Dig(matchPath)
+		// _, err := Dig(c, append(path, matchKey))
+		_, err := Dig(c, append(path[0 : len(path)-1], matchKey))
+		in_parent := err == nil
+		digVal, digErr := Dig(c, toPath(strings.Join(matchPath, ".")))
+		_, digIsMap := digVal.(map[string]interface{})
 
 		if disqualify(matchKey == path[len(path)-1], "self") ||
 			disqualify(!in_parent, "not present in parent") ||
@@ -108,7 +123,7 @@ func qualifyTransform(v string, c config, path []string) (string, error) {
 			continue
 		}
 
-		new := "." + strings.Join(append(path[0:len(path)-1], matchPath...), ".")
+		new := "." + toString(path) + "." + strings.Join(matchPath, ".")
 		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length
 	}
