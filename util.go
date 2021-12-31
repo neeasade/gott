@@ -18,28 +18,6 @@ func vlog(format string, args ...interface{}) {
 	}
 }
 
-func flattenMap(results map[string]string, m map[string]interface{}, namespace string) {
-	if namespace != "" {
-		namespace = namespace + "."
-	}
-
-	for key, value := range m {
-		nested, is_map := value.(map[string]interface{})
-		_, is_array := value.([]interface{})
-		if is_map {
-			flattenMap(results, nested, namespace+key)
-		} else if is_array {
-			// do nothing (string array indexes sounds gross)
-			// for index, _ := range arrayVal {
-			// 	index_string := fmt.Sprintf("[%i]", index)
-			// 	flattenMap(nested, namespace + key + index_string, results)
-			// }
-		} else {
-			results[namespace+key] = fmt.Sprintf("%v", value)
-		}
-	}
-}
-
 func makeTemplate() *template.Template {
 	funcMap := (sprig.TxtFuncMap())
 	funcMap["shpipe"] = func(command, value string) string {
@@ -83,7 +61,8 @@ func makeTemplate() *template.Template {
 	return template.New("").Option("missingkey=zero").Funcs(funcMap)
 }
 
-func parseToml(tomlFiles, tomlText []string) config {
+
+func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	result := map[string]interface{}{}
 
 	for _, file := range tomlFiles {
@@ -107,4 +86,15 @@ func parseToml(tomlFiles, tomlText []string) config {
 	}
 
 	return result
+}
+
+func makeTree(source interface{}, root Node, interface ) {
+	for _, v := range path {
+		switch v := v.(type) {
+		case string:
+			result = result + v + "."
+		case int:
+			result = result + fmt.Sprintf("%d", v) + "."
+		}
+	}
 }

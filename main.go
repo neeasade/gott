@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
+	// "strings"
 )
 
 var verbose bool = false
@@ -39,78 +39,80 @@ func main() {
 	flag.Parse()
 
 	c := parseToml(tomlFiles, tomlText)
-	tmpl := makeTemplate()
 
-	c.Transform(c, []string{}, qualifyTransform)
-	vlog(c.View("toml"))
+	os.Exit(0)
+	// tmpl := makeTemplate()
+	// c.Transform(c, []string{}, qualifyTransform)
 
-	vlog("------")
-	c.Transform(c, []string{}, identTransform)
-	vlog(c.View("toml"))
+	// // vlog(c.View("toml"))
 
-	realizeTransform := func(v string, c config, path []string) (string, error) {
-		// oof
-		for strings.Contains(v, "{{") {
-			original := v
-			name := strings.Join(path, ".")
-			vlog("rendering %s: %s", name, v)
-			v = c.Render(tmpl, v)
-			if original != v {
-				vlog("   result %s: %s", name, v)
-			}
-		}
-		return v, nil
-	}
+	// vlog("------")
+	// c.Transform(c, []string{}, identTransform)
+	// vlog(c.View("toml"))
 
-	c.Transform(c, []string{}, realizeTransform)
+	// realizeTransform := func(v string, c config, path []string) (string, error) {
+	// 	// oof
+	// 	for strings.Contains(v, "{{") {
+	// 		original := v
+	// 		name := strings.Join(path, ".")
+	// 		vlog("rendering %s: %s", name, v)
+	// 		v = c.Render(tmpl, v)
+	// 		if original != v {
+	// 			vlog("   result %s: %s", name, v)
+	// 		}
+	// 	}
+	// 	return v, nil
+	// }
 
-	for _, p := range promotions {
-		c = c.Promote(strings.Split(p, "."))
-	}
+	// c.Transform(c, []string{}, realizeTransform)
 
-	if narrow != "" {
-		d, is_map, err := c.Dig(strings.Split(narrow, "."))
-		if err != nil {
-			panic(err)
-		}
-		if !is_map {
-			glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
-		}
-		c = d
-	}
+	// for _, p := range promotions {
+	// 	c = c.Promote(strings.Split(p, "."))
+	// }
 
-	if action != "" {
-		view, err := c.View(action)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Print(view)
-	}
+	// if narrow != "" {
+	// 	d, is_map, err := c.Dig(strings.Split(narrow, "."))
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	if !is_map {
+	// 		glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
+	// 	}
+	// 	c = d
+	// }
 
-	for _, file := range renderTargets {
-		bytes, err := os.ReadFile(file)
-		if err != nil {
-			glog.Fatalf("render file not found: %s", file)
-		}
+	// if action != "" {
+	// 	view, err := c.View(action)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	fmt.Print(view)
+	// }
 
-		r, err := identTransform(string(bytes), c, []string{})
-		fmt.Println(c.Render(tmpl, r))
-	}
+	// for _, file := range renderTargets {
+	// 	bytes, err := os.ReadFile(file)
+	// 	if err != nil {
+	// 		glog.Fatalf("render file not found: %s", file)
+	// 	}
 
-	if queryString != "" {
-		// text/template doesn't like '-', but you can get around it with the index function
-		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
-		parts := strings.Split(queryString, ".")
-		if len(parts) > 1 {
-			queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
-			vlog("queryString: %s", queryString)
-		} else {
-			queryString = "{{." + queryString + "}}"
-		}
-		fmt.Println(c.Render(tmpl, queryString))
-	}
+	// 	r, err := identTransform(string(bytes), c, []string{})
+	// 	fmt.Println(c.Render(tmpl, r))
+	// }
 
-	if queryStringPlain != "" {
-		fmt.Println(c.Render(tmpl, queryStringPlain))
-	}
+	// if queryString != "" {
+	// 	// text/template doesn't like '-', but you can get around it with the index function
+	// 	// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
+	// 	parts := strings.Split(queryString, ".")
+	// 	if len(parts) > 1 {
+	// 		queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
+	// 		vlog("queryString: %s", queryString)
+	// 	} else {
+	// 		queryString = "{{." + queryString + "}}"
+	// 	}
+	// 	fmt.Println(c.Render(tmpl, queryString))
+	// }
+
+	// if queryStringPlain != "" {
+	// 	fmt.Println(c.Render(tmpl, queryStringPlain))
+	// }
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -11,8 +12,135 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// the most esteemed type that exists
-type config map[string]interface{}
+// turn a path into a flat string like a.0.foo-bar
+// nb: you can't define methods on interface{} (which makes sense)
+func toString(path []interface{}) string {
+	result := ""
+	for _, v := range path {
+		switch v := v.(type) {
+		case string:
+			result = result + v + "."
+		case int:
+			result = result + fmt.Sprintf("%d", v) + "."
+		}
+	}
+
+	if result != "" {
+		// remove trailing .
+		result = result[0:len(result)-1]
+	}
+	return result
+}
+
+// "path" is a slice of strings+ints leading to a node in config
+// todo: see about using type alises to define these methods on strings/interface{}?
+func toPath(s string) []interface{} {
+	path := []interface{}{}
+	for _, v := range strings.Split(s, ".") {
+		// todo: this should account for ints
+		i, err := strconv.Atoi(v)
+		if err == nil {
+			path = append(path, i)
+		} else {
+			path = append(path, v)
+		}
+	}
+	return path
+}
+
+type Node struct {
+	// a string, int, date (ie a non-map, non-array)
+	// could be a leaf value, or an identifier
+	value    interface{}
+	children []Node
+}
+
+func (n Node) isLeaf() bool {
+	return len(n.children) == 0
+}
+
+// func (n Node) toMap() (map[string]interface{}, error) {
+// 	toReturn := map[string]interface{}{}
+
+// 	if n.isLeaf() {
+// 		return nil, errors.New("node can't be turned into map (I'm a leaf)")
+// 	}
+
+// 	for _, n_ := range n.children {
+// 		if n_.isLeaf() {
+// 			return nil, errors.New("node can't be turned into map (missing grandchild)")
+// 		}
+
+// 		grandchildren := n_.children
+// 		key := n_.value.(string)
+// 		if len(grandchildren) == 1 {
+// 			toReturn[key] = grandchildren[0].value
+// 		} else {
+// 			v := []interface{}{}
+// 			for _, gc := range grandchildren {
+// 				if ! gc.isLeaf() {
+// 					return nil, errors.New("node can't be turned into map (grand-grandchildren present)")
+// 				}
+// 				v = append(v, gc.value)
+// 			}
+// 			toReturn[key] = v
+// 		}
+// 	}
+
+// 	return toReturn, nil
+// }
+
+func (n Node) toArray() ([]interface{}, error) {
+	toReturn = []interface{}
+
+	for _, n_ := range n.children {
+		switch v := n_.value.(type) {
+		case int:
+			toReturn = append(toReturn, n_.value.children.To)
+		}
+
+		// if n_.value == key {
+		// 	return n_.find(path[1:])
+		// }
+	}
+
+	return Node{}, errors.New("Invalid path")
+}
+
+func (n Node) find(path []interface{}) (Node, error) {
+	if len(path) == 0 {
+		return n, nil
+	}
+
+	for _, n_ := range n.children {
+		if n_.value == key {
+			return n_.find(path[1:])
+		}
+	}
+
+	return Node{}, errors.New("Invalid path")
+}
+
+func (n Node) changeLeaves(path []interface{}, operation func(Node, []interface{}) (interface{}, error)) error {
+	if n.isLeaf() {
+		newVal, err := operation(n, path)
+		if err != nil {
+			vlog("transform err at node %s", toString(path))
+			panic(err)
+		}
+
+		if newVal != n.value {
+			n.value = newVal
+		}
+	}
+
+	for _, n_ := range n.children {
+		n_.changeLeaves(append(path, n.value), operation)
+	}
+
+	return nil
+}
+
 
 func (c config) Flatten() map[string]string {
 	results := map[string]string{}
@@ -47,17 +175,6 @@ func (c config) View(kind string) (string, error) {
 		return b.String(), nil
 	}
 	return "", errors.New("invalid view requested")
-}
-
-func (c config) Promote(path []string) config {
-	result := config{}
-	mergo.Merge(&result, c)
-
-	zoom, _, _ := c.Dig(path)
-	if err := mergo.Merge(&c, zoom); err != nil {
-		panic(err)
-	}
-	return c
 }
 
 // todo: this could probably return interface, then is_map dies
