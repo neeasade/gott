@@ -46,19 +46,6 @@ func TestNode(t *testing.T) {
 		},
 	}
 
-	nSinglePathMap := Node {"root",
-		[]*Node{
-			&Node{"a",
-				[]*Node{
-					&Node{"b", []*Node{}},
-					// &Node{"c", []*Node{}},
-				},
-			},
-		},
-	}
-
-
-
 	findEqual("b", n, "a", "b")
 
 	n.changeLeaves([]interface{}{},
@@ -68,11 +55,57 @@ func TestNode(t *testing.T) {
 
 	findEqual("bfoo", n, "a", "bfoo")
 
-	mapExpected := map[string]interface{}{"root":
-		map[string]interface{}{"a":
-			"b",
+
+	n = Node {"root",
+		[]*Node{
+			&Node{"a",
+				[]*Node{
+					&Node{"a", []*Node{}},
+				},
+			},
+			&Node{"b",
+				[]*Node{
+					&Node{"b", []*Node{}},
+				},
+			},
 		},
 	}
 
-	equal(mapExpected, nSinglePathMap.toMap())
+	// toml top level
+	// a = "a"
+	// b = "b"
+	mapExpected := map[string]interface{}{
+		"root": map[string]interface{}{
+			"a": "a",
+			"b": "b",
+		},
+	}
+
+	equal(mapExpected, n.toMap())
+
+	n = Node {"root",
+		[]*Node{
+			&Node{"a",
+				[]*Node{
+					&Node{0, []*Node{&Node{"zero", []*Node{}},}},
+					&Node{1, []*Node{&Node{2, []*Node{}},}},
+				},
+			},
+			&Node{"b",
+				[]*Node{
+					&Node{"b", []*Node{}},
+				},
+			},
+		},
+	}
+
+	mapExpected = map[string]interface{}{
+		"root": map[string]interface{}{
+			"a": []interface{}{"zero", 2},
+			"b": "b",
+		},
+	}
+
+	equal(mapExpected, n.toMap())
+
 }

@@ -41,7 +41,7 @@ func (root Node) toMap() map[string]interface{} {
 				asArray, isArray := runningVal.([]interface{})
 
 				cString, cStringp := runningNode.value.(string)
-				// cInt, cIntp  := runningNode.value.(int)
+				cInt, cIntp  := runningNode.value.(int)
 
 				// nString, nStringp := next.value.(string)
 				_, nStringp := next.value.(string)
@@ -51,15 +51,17 @@ func (root Node) toMap() map[string]interface{} {
 				if next.isLeaf() {
 					vlog("next is leaf")
 					if isMap && cStringp {
-						vlog("is leaf: %s %s", cString, next.value)
+						vlog("is leaf map: %s %s", cString, next.value)
 						asMap[cString] = next.value
 						// runningVal.(map[string]interface{})[cString] = next.value
 						break
 					}
-					if isArray {
-						asArray = append(asArray, next.value)
+					if isArray && cIntp {
+						vlog("is leaf array: %v %v", cInt, next.value)
+						asArray[0] = next.value
 						break
 					}
+					panic("what")
 				}
 
 				var nextVal interface{}
@@ -67,22 +69,23 @@ func (root Node) toMap() map[string]interface{} {
 				if nStringp {
 					nextVal = map[string]interface{}{}
 				} else if nIntp {
-					nextVal = []interface{}{}
+					// throwing this value away
+					nextVal = []interface{}{nil}
 				}
 
 				if isMap {
 					asMap[cString] = nextVal
 					runningVal = asMap[cString]
 				} else if isArray {
-					asArray = append(asArray, nextVal)
-					runningVal = asArray[0]
+					asArray[0] = nextVal
 				}
 
 				runningNode = next
 			}
 
 			vlog("resulting map: %v", base)
-			if err := mergo.Merge(&result, base); err != nil {
+
+			if err := mergo.Merge(&result, base, mergo.WithAppendSlice); err != nil {
 				panic(err)
 			}
 
