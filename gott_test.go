@@ -108,4 +108,16 @@ func TestNode(t *testing.T) {
 
 	equal(mapExpected, n.ToMap())
 
+	n = Node{"root", []*Node{}}
+	n.Add("a", 1)
+	n.Add("b", 2)
+
+	mapExpected = map[string]interface{}{
+		"root": map[string]interface{}{
+			"a": 1,
+			"b": 2,
+		},
+	}
+
+	equal(mapExpected, n.ToMap())
 }
