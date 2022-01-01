@@ -49,7 +49,7 @@ func TestNode(t *testing.T) {
 	findEqual("b", n, "a", "b")
 
 	n.changeLeaves([]interface{}{},
-		func(n *Node, _ []interface{}) (interface{}, error) {
+		func(n *Node, _ NodePath) (interface{}, error) {
 			return n.value.(string) + "foo", nil
 		})
 
@@ -81,7 +81,7 @@ func TestNode(t *testing.T) {
 		},
 	}
 
-	equal(mapExpected, n.toMap())
+	equal(mapExpected, n.ToMap())
 
 	n = Node {"root",
 		[]*Node{
@@ -106,6 +106,6 @@ func TestNode(t *testing.T) {
 		},
 	}
 
-	equal(mapExpected, n.toMap())
+	equal(mapExpected, n.ToMap())
 
 }
