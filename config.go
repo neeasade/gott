@@ -1,16 +1,99 @@
 package main
 
 import (
-	"bytes"
+	// "bytes"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"text/template"
+	// "text/template"
 
 	"github.com/imdario/mergo"
-	"github.com/pelletier/go-toml/v2"
+	// "github.com/pelletier/go-toml/v2"
 )
+
+// func Scratch() {
+// 	map[string]interface{}
+// }
+
+func (root Node) toMap() map[string]interface{} {
+	result := map[string]interface{}{}
+
+	root.changeLeaves([]interface{}{},
+		func(n *Node, path []interface{}) (interface{}, error) {
+			vlog("map from leaf: %s", toString(path))
+			path = path[1:]
+
+			var base interface{} = map[string]interface{}{}
+			var runningVal interface{} = base
+
+			runningNode := root
+
+			for _, p := range path {
+				vlog("base: %v", base)
+
+				next, err := runningNode.find(p)
+				if err != nil {
+					panic(err)
+				}
+
+				asMap, isMap := runningVal.(map[string]interface{})
+				asArray, isArray := runningVal.([]interface{})
+
+				cString, cStringp := runningNode.value.(string)
+				// cInt, cIntp  := runningNode.value.(int)
+
+				// nString, nStringp := next.value.(string)
+				_, nStringp := next.value.(string)
+				// nInt, nIntp  := next.value.(int)
+				_, nIntp  := next.value.(int)
+
+				if next.isLeaf() {
+					vlog("next is leaf")
+					if isMap && cStringp {
+						vlog("is leaf: %s %s", cString, next.value)
+						asMap[cString] = next.value
+						// runningVal.(map[string]interface{})[cString] = next.value
+						break
+					}
+					if isArray {
+						asArray = append(asArray, next.value)
+						break
+					}
+				}
+
+				var nextVal interface{}
+
+				if nStringp {
+					nextVal = map[string]interface{}{}
+				} else if nIntp {
+					nextVal = []interface{}{}
+				}
+
+				if isMap {
+					asMap[cString] = nextVal
+					runningVal = asMap[cString]
+				} else if isArray {
+					asArray = append(asArray, nextVal)
+					runningVal = asArray[0]
+				}
+
+				runningNode = next
+			}
+
+			vlog("resulting map: %v", base)
+			if err := mergo.Merge(&result, base); err != nil {
+				panic(err)
+			}
+
+			return n.value, nil
+		})
+
+	return result
+}
+
+// func NodeToMap(n Node, path []interface{}, result interface{}) interface{} {
+// }
 
 // turn a path into a flat string like a.0.foo-bar
 // nb: you can't define methods on interface{} (which makes sense)
@@ -18,6 +101,7 @@ func toString(path []interface{}) string {
 	result := ""
 	for _, v := range path {
 		switch v := v.(type) {
+
 		case string:
 			result = result + v + "."
 		case int:
@@ -52,76 +136,34 @@ type Node struct {
 	// a string, int, date (ie a non-map, non-array)
 	// could be a leaf value, or an identifier
 	value    interface{}
-	children []Node
+	children []*Node
 }
 
 func (n Node) isLeaf() bool {
 	return len(n.children) == 0
 }
 
-// func (n Node) toMap() (map[string]interface{}, error) {
-// 	toReturn := map[string]interface{}{}
-
-// 	if n.isLeaf() {
-// 		return nil, errors.New("node can't be turned into map (I'm a leaf)")
-// 	}
-
-// 	for _, n_ := range n.children {
-// 		if n_.isLeaf() {
-// 			return nil, errors.New("node can't be turned into map (missing grandchild)")
-// 		}
-
-// 		grandchildren := n_.children
-// 		key := n_.value.(string)
-// 		if len(grandchildren) == 1 {
-// 			toReturn[key] = grandchildren[0].value
-// 		} else {
-// 			v := []interface{}{}
-// 			for _, gc := range grandchildren {
-// 				if ! gc.isLeaf() {
-// 					return nil, errors.New("node can't be turned into map (grand-grandchildren present)")
-// 				}
-// 				v = append(v, gc.value)
-// 			}
-// 			toReturn[key] = v
-// 		}
-// 	}
-
-// 	return toReturn, nil
-// }
-
-func (n Node) toArray() ([]interface{}, error) {
-	toReturn = []interface{}
-
-	for _, n_ := range n.children {
-		switch v := n_.value.(type) {
-		case int:
-			toReturn = append(toReturn, n_.value.children.To)
-		}
-
-		// if n_.value == key {
-		// 	return n_.find(path[1:])
-		// }
-	}
-
-	return Node{}, errors.New("Invalid path")
-}
-
-func (n Node) find(path []interface{}) (Node, error) {
+func (n Node) find(path ...interface{}) (Node, error) {
 	if len(path) == 0 {
 		return n, nil
 	}
 
+	vlog("find: %s", toString(path))
+
 	for _, n_ := range n.children {
-		if n_.value == key {
-			return n_.find(path[1:])
+		vlog("find: compare %v == %v ?", path[0], n_.value)
+		if n_.value == path[0] {
+			vlog("find: found %s!", path[0])
+			return n_.find(path[1:]...)
 		}
 	}
 
-	return Node{}, errors.New("Invalid path")
+	return Node{}, errors.New("Couldn't find path! " + toString(path))
 }
 
-func (n Node) changeLeaves(path []interface{}, operation func(Node, []interface{}) (interface{}, error)) error {
+func (n *Node) changeLeaves(path []interface{}, operation func(*Node, []interface{}) (interface{}, error)) error {
+	path = append(path, n.value)
+
 	if n.isLeaf() {
 		newVal, err := operation(n, path)
 		if err != nil {
@@ -130,104 +172,54 @@ func (n Node) changeLeaves(path []interface{}, operation func(Node, []interface{
 		}
 
 		if newVal != n.value {
+			vlog("update: '%s' '%v' -> '%v'", toString(path), n.value, newVal)
 			n.value = newVal
 		}
 	}
 
 	for _, n_ := range n.children {
-		n_.changeLeaves(append(path, n.value), operation)
+		n_.changeLeaves(path, operation)
 	}
 
 	return nil
 }
 
+// func (c config) View(kind string) (string, error) {
+// 	switch kind {
+// 	case "toml":
+// 		b, err := toml.Marshal(c)
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 		return string(b), nil
+// 	case "keys":
+// 		keys := []string{}
+// 		for k, _ := range c.Flatten() {
+// 			keys = append(keys, k)
+// 		}
+// 		return strings.Join(keys, "\n") + "\n", nil
+// 	case "shell":
+// 		var b bytes.Buffer
+// 		// todo: this should handle arrays and 1d tables
+// 		for k, v := range c.Flatten() {
+// 			k = strings.ReplaceAll(k, ".", "_")
+// 			// todo: meh on this replace value
+// 			k = strings.ReplaceAll(k, "-", "_")
+// 			v = strings.ReplaceAll(v, "'", "'\\''")
+// 			fmt.Fprintf(&b, "%s='%s'\n", k, v)
+// 		}
+// 		return b.String(), nil
+// 	}
+// 	return "", errors.New("invalid view requested")
+// }
 
-func (c config) Flatten() map[string]string {
-	results := map[string]string{}
-	flattenMap(results, c, "")
-	return results
-}
+// func (c config) Render(tmpl *template.Template, template_text string) string {
+// 	t := template.Must(tmpl.Parse(template_text))
+// 	result := new(bytes.Buffer)
+// 	err := t.Execute(result, c)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	return result.String()
+// }
 
-func (c config) View(kind string) (string, error) {
-	switch kind {
-	case "toml":
-		b, err := toml.Marshal(c)
-		if err != nil {
-			panic(err)
-		}
-		return string(b), nil
-	case "keys":
-		keys := []string{}
-		for k, _ := range c.Flatten() {
-			keys = append(keys, k)
-		}
-		return strings.Join(keys, "\n") + "\n", nil
-	case "shell":
-		var b bytes.Buffer
-		// todo: this should handle arrays and 1d tables
-		for k, v := range c.Flatten() {
-			k = strings.ReplaceAll(k, ".", "_")
-			// todo: meh on this replace value
-			k = strings.ReplaceAll(k, "-", "_")
-			v = strings.ReplaceAll(v, "'", "'\\''")
-			fmt.Fprintf(&b, "%s='%s'\n", k, v)
-		}
-		return b.String(), nil
-	}
-	return "", errors.New("invalid view requested")
-}
-
-// todo: this could probably return interface, then is_map dies
-func (c config) Dig(path []string) (result config, is_map bool, error error) {
-	if len(path) == 0 {
-		return c, true, nil
-	}
-
-	if v, ok := c[path[0]]; ok {
-		m, is_map := v.(map[string]interface{})
-		if is_map {
-			if len(path) == 1 {
-				return config(m), true, nil
-			} else {
-				return config(m).Dig(path[1:])
-			}
-		} else {
-			if len(path) == 1 {
-				return nil, false, nil
-			} else {
-				return nil, false, errors.New("not reached")
-			}
-		}
-	}
-
-	return nil, false, errors.New("Bad path")
-}
-
-func (c config) Render(tmpl *template.Template, template_text string) string {
-	t := template.Must(tmpl.Parse(template_text))
-	result := new(bytes.Buffer)
-	err := t.Execute(result, c)
-	if err != nil {
-		panic(err)
-	}
-	return result.String()
-}
-
-// transform the string values in the map
-// todo: this could probably act on interface as well
-func (c config) Transform(m map[string]interface{}, path []string, operation func(string, config, []string) (string, error)) {
-	for k, v := range m {
-		switch v := v.(type) {
-		case map[string]interface{}:
-			c.Transform(v, append(path, k), operation)
-		case string:
-			{
-				result, err := operation(v, c, append(path, k))
-				if err != nil {
-					panic(err)
-				}
-				m[k] = result
-			}
-		}
-	}
-}
