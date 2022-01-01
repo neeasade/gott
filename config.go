@@ -138,6 +138,24 @@ func (n Node) isLeaf() bool {
 	return len(n.children) == 0
 }
 
+func (n *Node) Add(v interface{}, path_ ...interface{}) *Node {
+	path := NodePath(path_)
+
+	if len(path) == 0 {
+		n.value = v
+		return n
+	}
+
+	child, err := n.find(path[0])
+	if err == nil {
+		child.Add(v, path[1:]...)
+	} else {
+		new := &Node{value: path[0], children: []*Node{}}
+		n.children = append(n.children, new.Add(v, path[1:]...))
+	}
+	return n
+}
+
 func (n Node) find(path_ ...interface{}) (Node, error) {
 	path := NodePath(path_)
 
