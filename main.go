@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	// "fmt"
 	"log"
 	"os"
 	// "strings"
@@ -38,7 +38,14 @@ func main() {
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 	flag.Parse()
 
-	c := parseToml(tomlFiles, tomlText)
+	// c := parseToml(tomlFiles, tomlText)
+
+	// test := Node{
+	// 	"a",
+	// 	[
+	// 		Node"c"
+	// 		]
+	// }
 
 	os.Exit(0)
 	// tmpl := makeTemplate()

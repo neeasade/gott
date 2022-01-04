@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+
 	"os/exec"
 	"text/template"
 
@@ -11,6 +12,25 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml/v2"
 )
+
+func mapToNode(n *Node, value interface{}, path NodePath, action func(NodePath)) {
+	nested, is_map := value.(map[string]interface{})
+	arrayVal, is_array := value.([]interface{})
+	if is_map {
+		for key, _ := range nested {
+			mapToNode(n, nested[key], append(path, key), action)
+		}
+	} else if is_array {
+		for index, _ := range arrayVal {
+			mapToNode(n, arrayVal[index], append(path, index), action)
+		}
+	} else {
+		// results[namespace+key] = fmt.Sprintf("%v", value)
+		p := NodePath(append(path, value))
+		vlog("adding path to root node: %v", p.ToString())
+		n.add(p...)
+	}
+}
 
 func vlog(format string, args ...interface{}) {
 	if verbose {
@@ -61,7 +81,6 @@ func makeTemplate() *template.Template {
 	return template.New("").Option("missingkey=zero").Funcs(funcMap)
 }
 
-
 func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	result := map[string]interface{}{}
 
@@ -88,13 +107,13 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	return result
 }
 
-func makeTree(source interface{}, root Node, interface ) {
-	for _, v := range path {
-		switch v := v.(type) {
-		case string:
-			result = result + v + "."
-		case int:
-			result = result + fmt.Sprintf("%d", v) + "."
-		}
-	}
-}
+// func makeTree(source interface{}, root Node, interface ) {
+// 	for _, v := range path {
+// 		switch v := v.(type) {
+// 		case string:
+// 			result = result + v + "."
+// 		case int:
+// 			result = result + fmt.Sprintf("%d", v) + "."
+// 		}
+// 	}
+// }
