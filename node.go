@@ -7,8 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	// "text/template"
+	"text/template"
 
 	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml/v2"
@@ -177,7 +176,6 @@ func (path NodePath) ToString() string {
 func toPath(s string) NodePath {
 	path := []interface{}{}
 	for _, v := range strings.Split(s, ".") {
-		// todo: this should account for ints
 		i, err := strconv.Atoi(v)
 		if err == nil {
 			path = append(path, i)
@@ -189,6 +187,13 @@ func toPath(s string) NodePath {
 }
 
 func (n *Node) find(path_ ...interface{}) (*Node, error) {
+	if len(path_) == 1 {
+		_, isArray := path_[0].([]interface{})
+		if isArray {
+			panic("passed array into find! splice it")
+		}
+	}
+
 	path := NodePath(path_)
 
 	if len(path) == 0 {
@@ -218,7 +223,7 @@ func (n *Node) mustFind(path_ ...interface{}) *Node {
 
 func (n Node) toFlatMap() map[string]string {
 	results := map[string]string{}
-	n.changeLeaves([]interface{}{},
+	n.changeLeaves(NodePath{},
 		func(n *Node, path NodePath) (interface{}, error) {
 			results[path.ToString()] = fmt.Sprintf("%v", n.value)
 			return n.value, nil
@@ -261,12 +266,23 @@ func (n Node) view(kind string) (string, error) {
 	return "", errors.New("invalid view requested")
 }
 
-// func (c config) Render(tmpl *template.Template, template_text string) string {
-// 	t := template.Must(tmpl.Parse(template_text))
-// 	result := new(bytes.Buffer)
-// 	err := t.Execute(result, c)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	return result.String()
-// }
+func (n Node) render(tmpl *template.Template, text string) (string, error) {
+	t := template.Must(tmpl.Parse(text))
+	result := new(bytes.Buffer)
+	err := t.Execute(result, n.toMap())
+	return result.String(), err
+}
+
+func (n Node) mustRender(tmpl *template.Template, text string) (string) {
+	r, err := n.render(tmpl, text)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
+func (n *Node) promote(path NodePath) {
+	child := n.mustFind(path...)
+	n.children = append(n.children, child.children...)
+}
+

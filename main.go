@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	// "fmt"
+	"fmt"
 	"log"
 	"os"
-	// "strings"
+	"strings"
 )
 
 var verbose bool = false
@@ -38,88 +38,85 @@ func main() {
 	flag.StringVar(&narrow, "n", "", "Narrow the namespaces to consider")
 	flag.Parse()
 
-	// c := parseToml(tomlFiles, tomlText)
+	tomlMap := parseToml(tomlFiles, tomlText)
+	tmpl := makeTemplate()
+	rootNode := Node{}
+	mapToNode(&rootNode, tomlMap, NodePath{})
 
-	// test := Node{
-	// 	"a",
-	// 	[
-	// 		Node"c"
-	// 		]
-	// }
+	rootNode.changeLeaves(NodePath{},
+		func(n *Node, path NodePath) (interface{}, error) {
+			return qualifyTransform(n, path, rootNode)
+		})
 
-	os.Exit(0)
-	// tmpl := makeTemplate()
-	// c.Transform(c, []string{}, qualifyTransform)
+	vlog(rootNode.view("toml"))
 
-	// // vlog(c.View("toml"))
+	vlog("------")
 
-	// vlog("------")
-	// c.Transform(c, []string{}, identTransform)
-	// vlog(c.View("toml"))
+	// not doing this for now.
+	// rootNode.Transform(c, []string{}, identTransform)
+	// vlog(rootNode.View("toml"))
 
-	// realizeTransform := func(v string, c config, path []string) (string, error) {
-	// 	// oof
-	// 	for strings.Contains(v, "{{") {
-	// 		original := v
-	// 		name := strings.Join(path, ".")
-	// 		vlog("rendering %s: %s", name, v)
-	// 		v = c.Render(tmpl, v)
-	// 		if original != v {
-	// 			vlog("   result %s: %s", name, v)
-	// 		}
-	// 	}
-	// 	return v, nil
-	// }
+	realizeTransform := func(n *Node, path NodePath) (interface{}, error) {
+		if fmt.Sprintf("%T", n.value) != "string" {
+			return n.value, nil
+		}
+		v := n.value.(string)
 
-	// c.Transform(c, []string{}, realizeTransform)
+		// oof
+		for strings.Contains(v, "{{") {
+			original := v
+			vlog("rendering %s: %s", path.ToString(), v)
+			v = rootNode.mustRender(tmpl, v)
+			if original != v {
+				vlog("   result %s: %s", path.ToString(), v)
+			}
+		}
+		return v, nil
+	}
 
-	// for _, p := range promotions {
-	// 	c = c.Promote(strings.Split(p, "."))
-	// }
+	rootNode.changeLeaves(NodePath{}, realizeTransform)
 
-	// if narrow != "" {
-	// 	d, is_map, err := c.Dig(strings.Split(narrow, "."))
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	if !is_map {
-	// 		glog.Fatalf("Narrowed to a non-map value! %s. Use -q instead.", narrow)
-	// 	}
-	// 	c = d
-	// }
+	if len(promotions) > 0 {
+		rootNode.promote(toPath(strings.Join(promotions, ".")))
+	}
 
-	// if action != "" {
-	// 	view, err := c.View(action)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	fmt.Print(view)
-	// }
+	if narrow != "" {
+		rootNode = *rootNode.mustFind(toPath(narrow))
+	}
 
-	// for _, file := range renderTargets {
-	// 	bytes, err := os.ReadFile(file)
-	// 	if err != nil {
-	// 		glog.Fatalf("render file not found: %s", file)
-	// 	}
+	if action != "" {
+		view, err := rootNode.view(action)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Print(view)
+	}
 
-	// 	r, err := identTransform(string(bytes), c, []string{})
-	// 	fmt.Println(c.Render(tmpl, r))
-	// }
+	for _, file := range renderTargets {
+		bytes, err := os.ReadFile(file)
+		if err != nil {
+			glog.Fatalf("render file not found: %s", file)
+		}
 
-	// if queryString != "" {
-	// 	// text/template doesn't like '-', but you can get around it with the index function
-	// 	// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
-	// 	parts := strings.Split(queryString, ".")
-	// 	if len(parts) > 1 {
-	// 		queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
-	// 		vlog("queryString: %s", queryString)
-	// 	} else {
-	// 		queryString = "{{." + queryString + "}}"
-	// 	}
-	// 	fmt.Println(c.Render(tmpl, queryString))
-	// }
+		// r, err := identTransform(string(bytes), c, []string{})
+		// fmt.Println(c.Render(tmpl, r))
+		fmt.Println(rootNode.render(tmpl, string(bytes)))
+	}
 
-	// if queryStringPlain != "" {
-	// 	fmt.Println(c.Render(tmpl, queryStringPlain))
-	// }
+	if queryString != "" {
+		// text/template doesn't like '-', but you can get around it with the index function
+		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
+		parts := strings.Split(queryString, ".")
+		if len(parts) > 1 {
+			queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
+			vlog("queryString: %s", queryString)
+		} else {
+			queryString = "{{." + queryString + "}}"
+		}
+		fmt.Println(rootNode.render(tmpl, queryString))
+	}
+
+	if queryStringPlain != "" {
+		fmt.Println(rootNode.render(tmpl, queryStringPlain))
+	}
 }

@@ -13,16 +13,16 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-func mapToNode(n *Node, value interface{}, path NodePath, action func(NodePath)) {
+func mapToNode(n *Node, value interface{}, path NodePath) {
 	nested, is_map := value.(map[string]interface{})
 	arrayVal, is_array := value.([]interface{})
 	if is_map {
 		for key, _ := range nested {
-			mapToNode(n, nested[key], append(path, key), action)
+			mapToNode(n, nested[key], append(path, key))
 		}
 	} else if is_array {
 		for index, _ := range arrayVal {
-			mapToNode(n, arrayVal[index], append(path, index), action)
+			mapToNode(n, arrayVal[index], append(path, index))
 		}
 	} else {
 		// results[namespace+key] = fmt.Sprintf("%v", value)
