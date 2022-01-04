@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	// "text/template"
 
@@ -20,6 +21,12 @@ type Node struct {
 	// could be a leaf value, or an identifier (map string key or array index)
 	value    interface{}
 	children []*Node
+	mu       sync.Mutex
+}
+
+func NewNode(value interface{}, children_ ...*Node) *Node {
+	var children = []*Node{}
+	return &Node{value: value, children: append(children, children_...)}
 }
 
 func (n Node) isLeaf() bool {
@@ -61,13 +68,14 @@ func (n *Node) add(path_ ...interface{}) {
 	if err == nil {
 		child.add(path[1:]...)
 	} else {
-		new := &Node{value: path[0], children: []*Node{}}
+		var new *Node = NewNode(path[0])
+		vlog("add: making new node %v ON %s", new.value, n.value)
 		new.add(path[1:]...)
 		n.children = append(n.children, new)
 	}
 }
 
-func (root Node) toMap() map[string]interface{} {
+func (root *Node) toMap() map[string]interface{} {
 	result := map[string]interface{}{}
 
 	root.changeLeaves([]interface{}{},
@@ -180,7 +188,7 @@ func toPath(s string) NodePath {
 	return path
 }
 
-func (n Node) find(path_ ...interface{}) (Node, error) {
+func (n *Node) find(path_ ...interface{}) (*Node, error) {
 	path := NodePath(path_)
 
 	if len(path) == 0 {
@@ -197,10 +205,10 @@ func (n Node) find(path_ ...interface{}) (Node, error) {
 		}
 	}
 
-	return Node{}, errors.New("Couldn't find path! " + path.ToString())
+	return &Node{}, errors.New("Couldn't find path! " + path.ToString())
 }
 
-func (n Node) mustFind(path_ ...interface{}) Node {
+func (n *Node) mustFind(path_ ...interface{}) *Node {
 	r, err := n.find(path_...)
 	if err != nil {
 		panic(err)
@@ -220,6 +228,12 @@ func (n Node) toFlatMap() map[string]string {
 
 func (n Node) view(kind string) (string, error) {
 	switch kind {
+	case "mapString":
+		result := ""
+		for k, v := range n.toFlatMap() {
+			result = result + fmt.Sprintf("\n%s: %s", k, v)
+		}
+		return result, nil
 	case "toml":
 		b, err := toml.Marshal(n.toMap())
 		if err != nil {
