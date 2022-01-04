@@ -1,9 +1,6 @@
 package main
 
-// type x map[string]x
-
 import (
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,14 +47,8 @@ func TestFromMap(t *testing.T) {
 	s, _ := n.view("mapString")
 	vlog("arst: %s", s)
 
-	var mu sync.Mutex
-	mapToNode(&n, data, NodePath{},
-		func(path NodePath) {
-			mu.Lock()
-			defer mu.Unlock()
-			n.add(path)
-		},
-	)
+	// var mu sync.Mutex
+	mapToNode(&n, data, NodePath{})
 
 	s, _ = n.view("mapString")
 	vlog("arst2: %s", s)
@@ -93,7 +84,6 @@ func TestAdd(t *testing.T) {
 	n.add("a", 1)
 	n.add("b", 2)
 	n.add("array", 0, "a")
-	vlog("fuckass")
 	n.add("array", 1, "b")
 
 	n.mustFind("array", 1, "b")
