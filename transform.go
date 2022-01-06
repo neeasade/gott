@@ -71,6 +71,7 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 	if fmt.Sprintf("%T", n.value) != "string" {
 		return n.value, nil
 	}
+	path = path[1:]
 
 	v := n.value.(string)
 
@@ -108,16 +109,18 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 		_, err := parent.find(matchKey)
 		in_parent := err != nil
 
-		u, digErr := rootNode.find(matchPath...)
-		isValue := len(u.children) == 0
+		_, digErr := rootNode.find(matchPath...)
+		// isValue := len(u.children) == 0
 
+			// disqualify(digErr == nil && isValue, "matchPath exists in map, and is a value") {
 		if disqualify(matchKey == path[len(path)-1], "self") ||
 			disqualify(!in_parent, "not present in parent") ||
-			disqualify(digErr == nil && isValue, "matchPath exists in map, and is a value") {
+			disqualify(digErr == nil, "matchPath exists in map") {
 			continue
 		}
 
-		parts := append(path[0:len(path)-1], matchPath...)
+		parts := append(path[0:len(path)-2], matchPath...)
+		// new := parts.ToIndexCall()
 		new := "." + parts.ToString()
 		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length

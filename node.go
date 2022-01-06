@@ -152,6 +152,25 @@ func (root *Node) toMap() map[string]interface{} {
 	return result
 }
 
+// doesn't include surrounding {{}}
+func (path NodePath) ToIndexCall() string {
+	if len(path) == 1 {
+		return "." + path[0].(string)
+	}
+
+	result := "index"
+	for _, v := range path {
+		switch v := v.(type) {
+		case string:
+			result = result + fmt.Sprintf(" \"%s\" ", v)
+		case int:
+			result = result + fmt.Sprintf(" %d ", v)
+		}
+	}
+
+	return result
+}
+
 func (path NodePath) ToString() string {
 	result := ""
 	for _, v := range path {
@@ -269,7 +288,18 @@ func (n Node) view(kind string) (string, error) {
 func (n Node) render(tmpl *template.Template, text string) (string, error) {
 	t := template.Must(tmpl.Parse(text))
 	result := new(bytes.Buffer)
-	err := t.Execute(result, n.toMap())
+
+	// ehhhhh
+	m := n.toMap()["root"].(map[string]interface{})
+
+	vlog("-----render map: ")
+	for k, v := range m {
+		vlog("%s: %v", k, v)
+	}
+	// vlog("render map: %v", m)
+
+	vlog("rendering (inner): %s", text)
+	err := t.Execute(result, m)
 	return result.String(), err
 }
 

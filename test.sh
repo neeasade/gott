@@ -7,7 +7,7 @@ fi
 
 toml=$(cat <<EOF
 ref = '{{.b.localA}}'
-ref1 = '{{.a.dashed-ident}}'
+# ref1 = '{{.a.dashed-ident}}'
 ref2 = '{{.a.zero}}'
 negative-one = '{{sub .a.zero 1}}'
 
@@ -15,7 +15,7 @@ negative-one = '{{sub .a.zero 1}}'
 a = 'wow!!'
 a2 = 'ok {{.a}}'
 a3 = [ 'fancy', 'words' ]
-a4 = '{{.a3.0}}'
+# a4 = '{{.a3.0}}'
 dashed-ident = '{{.a}}'
 one = 1
 zero = '{{sub .one 1}}'
@@ -57,7 +57,8 @@ die() {
 
 if [ "$1" = "-d" ]; then
     # debug
-    timeout .1 ./gott -T "$toml" -v -o toml
+    # timeout .1 ./gott -T "$toml" -v -o toml
+    timeout 1 ./gott -T "$toml" -v -o toml
     exit $?
 fi
 
