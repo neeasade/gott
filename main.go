@@ -40,12 +40,12 @@ func main() {
 
 	tomlMap := parseToml(tomlFiles, tomlText)
 	tmpl := makeTemplate()
-	rootNode := Node{}
-	mapToNode(&rootNode, tomlMap, NodePath{})
+	rootNode := NewNode("root")
+	mapToNode(rootNode, tomlMap, NodePath{})
 
 	rootNode.changeLeaves(NodePath{},
 		func(n *Node, path NodePath) (interface{}, error) {
-			return qualifyTransform(n, path, rootNode)
+			return qualifyTransform(n, path, *rootNode)
 		})
 
 	vlog(rootNode.view("toml"))
@@ -81,7 +81,7 @@ func main() {
 	}
 
 	if narrow != "" {
-		rootNode = *rootNode.mustFind(toPath(narrow))
+		rootNode = rootNode.mustFind(toPath(narrow))
 	}
 
 	if action != "" {
@@ -106,13 +106,8 @@ func main() {
 	if queryString != "" {
 		// text/template doesn't like '-', but you can get around it with the index function
 		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
-		parts := strings.Split(queryString, ".")
-		if len(parts) > 1 {
-			queryString = fmt.Sprintf("{{index .%s \"%s\"}}", parts[0], strings.Join(parts[1:], "\" \""))
-			vlog("queryString: %s", queryString)
-		} else {
-			queryString = "{{." + queryString + "}}"
-		}
+		s := toPath(queryString).ToIndexCall()
+		queryString = "{{" + s + "}}"
 		fmt.Println(rootNode.render(tmpl, queryString))
 	}
 
