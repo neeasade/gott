@@ -53,7 +53,10 @@ func main() {
 
 	rootNode.changeLeaves(NodePath{},
 		func(n *Node, path NodePath) (interface{}, error) {
-			return identTransform(n, path, *rootNode)
+			if fmt.Sprintf("%T", n.value) != "string" {
+				return n.value, nil
+			}
+			return identTransform(n.value.(string))
 		})
 
 	realizeTransform := func(n *Node, path NodePath) (interface{}, error) {
@@ -98,9 +101,8 @@ func main() {
 			glog.Fatalf("render file not found: %s", file)
 		}
 
-		// r, err := identTransform(string(bytes), c, []string{})
-		// fmt.Println(c.Render(tmpl, r))
-		fmt.Println(rootNode.render(tmpl, string(bytes)))
+		r, err := identTransform(string(bytes))
+		fmt.Println(rootNode.mustRender(tmpl, r))
 	}
 
 	if queryString != "" {

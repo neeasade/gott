@@ -10,14 +10,7 @@ import (
 // you can't used dashes or numbers, even if they are keys in a table
 // invalid: {{.wow.0}} {{.wow-ok}}
 // but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
-func identTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) {
-	if fmt.Sprintf("%T", n.value) != "string" {
-		return n.value, nil
-	}
-	path = path[1:]
-
-	v := n.value.(string)
-
+func identTransform(v string) (string, error) {
 	identRe := regexp.MustCompile(`({{)[^{}\.]*((\.[a-zA-Z0-9-]+)+)[^{}]*(}})`)
 	// reference
 	// match: {{sub .a.some-test 1}}
@@ -31,7 +24,7 @@ func identTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) 
 	// strings at indexes
 	delta := 0
 
-	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
+	matches := identRe.FindAllStringSubmatchIndex(v, -1)
 	// matches and submatches are identified by byte index pairs within the input string:
 	// result[2*n:2*n+1] identifies the indexes of the nth submatch. The pair for n==0 identifies the
 	// match of the entire expression
@@ -40,6 +33,7 @@ func identTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) 
 			return v[delta+groups[2*n] : delta+groups[2*n+1]]
 		}
 		fullMatch := toString(0)
+		vlog("identTransform: %v", fullMatch)
 		ident := toString(2)
 		start := groups[2*2] + delta
 		end := groups[2*2+1] + delta
@@ -52,6 +46,7 @@ func identTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) 
 		if addingBraces {
 			new = fmt.Sprintf("(%s)", new)
 		}
+		vlog("identTransform: new %v", new)
 
 		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length

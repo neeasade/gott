@@ -107,13 +107,3 @@ func parseToml(tomlFiles, tomlText []string) map[string]interface{} {
 	return result
 }
 
-// func makeTree(source interface{}, root Node, interface ) {
-// 	for _, v := range path {
-// 		switch v := v.(type) {
-// 		case string:
-// 			result = result + v + "."
-// 		case int:
-// 			result = result + fmt.Sprintf("%d", v) + "."
-// 		}
-// 	}
-// }
