@@ -152,10 +152,6 @@ func (root *Node) toMap() map[string]interface{} {
 
 // doesn't include surrounding {{}}
 func (path NodePath) ToIndexCall() string {
-	if len(path) == 1 {
-		return "." + path[0].(string)
-	}
-
 	result := "index . "
 	for _, v := range path {
 		switch v := v.(type) {
@@ -242,7 +238,8 @@ func (n Node) toFlatMap() map[string]string {
 	results := map[string]string{}
 	n.changeLeaves(NodePath{},
 		func(n *Node, path NodePath) (interface{}, error) {
-			results[path.ToString()] = fmt.Sprintf("%v", n.value)
+			// remove "root", value node
+			results[path[1:len(path)-1].ToString()] = fmt.Sprintf("%v", n.value)
 			return n.value, nil
 		})
 	return results
