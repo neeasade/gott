@@ -74,13 +74,12 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 	path = path[1:]
 
 	v := n.value.(string)
-
 	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9-]+)+)")
 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
-	parent := rootNode.mustFind(path[0 : len(path)-1]...)
+	parentPath := path[0:len(path) - 1]
 
 	if len(matches) > 0 {
-		vlog("\nqualifying .%s: %s", path.ToString(), v)
+		vlog("qualifying: .%s: '%s'", parentPath.ToString(), v)
 	}
 
 	delta := 0
@@ -95,8 +94,8 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 		matchPath := toPath(toString(2)[1:])
 		matchKey := matchPath[0]
 
-		vlog("parent: %v", parent)
-		vlog("looking at: .%s", path.ToString())
+		// vlog("parent: %v", parent)
+		// vlog("looking at: .%s", path.ToString())
 		vlog("matchKey, matchPath: %s, %v", matchKey, matchPath)
 
 		disqualify := func(cond bool, message string) bool {
@@ -106,24 +105,27 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 			return cond
 		}
 
-		_, err := parent.find(matchKey)
-		in_parent := err != nil
+		_, err := rootNode.mustFind(parentPath...).find(matchPath...)
+		inParent := err != nil
 
-		_, digErr := rootNode.find(matchPath...)
-		// isValue := len(u.children) == 0
+		u, digErr := rootNode.find(matchPath...)
+		isValue := len(u.children) == 1
 
-			// disqualify(digErr == nil && isValue, "matchPath exists in map, and is a value") {
 		if disqualify(matchKey == path[len(path)-1], "self") ||
-			disqualify(!in_parent, "not present in parent") ||
-			disqualify(digErr == nil, "matchPath exists in map") {
+			disqualify(!inParent, "not present in parent") ||
+			disqualify(digErr == nil && isValue, "matchPath exists in map") {
 			continue
 		}
 
-		parts := append(path[0:len(path)-2], matchPath...)
-		// new := parts.ToIndexCall()
-		new := "." + parts.ToString()
+		// it's a sibling! qualify it:
+		newPath := append(parentPath[0:len(parentPath)-1], matchPath...)
+		new := "." + newPath.ToString()
+
 		v = v[:start] + new + v[end:]
 		delta = delta + len(new) - length
+	}
+	if len(matches) > 0 {
+		vlog("qualify result: .%s: '%s'", path.ToString(), v)
 	}
 	return v, nil
 }

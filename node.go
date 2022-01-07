@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"text/template"
 
 	"github.com/imdario/mergo"
@@ -20,7 +19,6 @@ type Node struct {
 	// could be a leaf value, or an identifier (map string key or array index)
 	value    interface{}
 	children []*Node
-	mu       sync.Mutex
 }
 
 func NewNode(value interface{}, children_ ...*Node) *Node {
@@ -158,7 +156,7 @@ func (path NodePath) ToIndexCall() string {
 		return "." + path[0].(string)
 	}
 
-	result := "index"
+	result := "index . "
 	for _, v := range path {
 		switch v := v.(type) {
 		case string:
@@ -259,7 +257,7 @@ func (n Node) view(kind string) (string, error) {
 		}
 		return result, nil
 	case "toml":
-		b, err := toml.Marshal(n.toMap())
+		b, err := toml.Marshal(n.toRenderMap())
 		if err != nil {
 			panic(err)
 		}
@@ -285,12 +283,15 @@ func (n Node) view(kind string) (string, error) {
 	return "", errors.New("invalid view requested")
 }
 
+func (n Node) toRenderMap() map[string]interface{} {
+	// ehhhhh
+	return n.toMap()["root"].(map[string]interface{})
+}
+
 func (n Node) render(tmpl *template.Template, text string) (string, error) {
 	t := template.Must(tmpl.Parse(text))
 	result := new(bytes.Buffer)
-
-	// ehhhhh
-	m := n.toMap()["root"].(map[string]interface{})
+	m := n.toRenderMap()
 
 	vlog("-----render map: ")
 	for k, v := range m {

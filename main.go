@@ -104,11 +104,9 @@ func main() {
 	}
 
 	if queryString != "" {
-		// text/template doesn't like '-', but you can get around it with the index function
-		// {{wow.a-thing.cool}} -> {{index .wow "a-thing" "cool"}}
 		s := toPath(queryString).ToIndexCall()
 		queryString = "{{" + s + "}}"
-		fmt.Println(rootNode.render(tmpl, queryString))
+		fmt.Println(rootNode.mustRender(tmpl, queryString))
 	}
 
 	if queryStringPlain != "" {
