@@ -11,7 +11,7 @@ import (
 // invalid: {{.wow.0}} {{.wow-ok}}
 // but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
 func identTransform(v string) (string, error) {
-	identRe := regexp.MustCompile(`({{)[^{}\.]*((\.[a-zA-Z0-9-]+)+)[^{}]*(}})`)
+	identRe := regexp.MustCompile(`({{)[^{}\.]*((\.[a-zA-Z0-9-_]+)+)[^{}]*(}})`)
 	// reference
 	// match: {{sub .a.some-test 1}}
 	// Match groups :

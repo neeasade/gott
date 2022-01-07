@@ -79,8 +79,8 @@ func main() {
 
 	rootNode.changeLeaves(NodePath{}, realizeTransform)
 
-	if len(promotions) > 0 {
-		rootNode.promote(toPath(strings.Join(promotions, ".")))
+	for _, p := range promotions {
+		rootNode.promote(toPath(p))
 	}
 
 	if narrow != "" {
