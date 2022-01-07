@@ -3,69 +3,62 @@ package main
 import (
 	"fmt"
 	"regexp"
-	// "strings"
+	"strings"
 )
 
 // The go template default selection mechanism kinda sucks
 // you can't used dashes or numbers, even if they are keys in a table
 // invalid: {{.wow.0}} {{.wow-ok}}
 // but we want that (mostly dashes). so we'll take every selection and turn it into an index function call.
-// func identTransform(v string, c config, path []string) (string, error) {
-// 	identRe := regexp.MustCompile("({{)[^{}\\.]*((\\.[a-zA-Z0-9-]+)+)[^{}]*(}})")
-// 	// reference
-// 	// match: {{sub .a.some-test 1}}
-// 	// Match groups :
-// 	// 0	-	{{
-// 	// 1	-	.a.some-test
-// 	// 2	-	.some-test
-// 	// 3	-	}}
+func identTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) {
+	if fmt.Sprintf("%T", n.value) != "string" {
+		return n.value, nil
+	}
+	path = path[1:]
 
-// 	// have to be a little delicate -- tracking moving point of the edit as we replace larger
-// 	// strings at indexes
-// 	delta := 0
+	v := n.value.(string)
 
-// 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
-// 	// matches and submatches are identified by byte index pairs within the input string:
-// 	// result[2*n:2*n+1] identifies the indexes of the nth submatch. The pair for n==0 identifies the
-// 	// match of the entire expression
-// 	for _, groups := range matches {
-// 		toString := func(n int) string {
-// 			return v[delta+groups[2*n] : delta+groups[2*n+1]]
-// 		}
-// 		fullMatch := toString(0)
-// 		ident := toString(2)
-// 		start := groups[2*2] + delta
-// 		end := groups[2*2+1] + delta
-// 		length := end - start
+	identRe := regexp.MustCompile(`({{)[^{}\.]*((\.[a-zA-Z0-9-]+)+)[^{}]*(}})`)
+	// reference
+	// match: {{sub .a.some-test 1}}
+	// Match groups :
+	// 0	-	{{
+	// 1	-	.a.some-test
+	// 2	-	.some-test
+	// 3	-	}}
 
-// 		// vlog("fullmatch: %s", fullMatch)
+	// have to be a little delicate -- tracking moving point of the edit as we replace larger
+	// strings at indexes
+	delta := 0
 
-// 		// you're always replacing at the ident location, it's just a question of adding the ()
-// 		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{"+ident+"}}"
+	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
+	// matches and submatches are identified by byte index pairs within the input string:
+	// result[2*n:2*n+1] identifies the indexes of the nth submatch. The pair for n==0 identifies the
+	// match of the entire expression
+	for _, groups := range matches {
+		toString := func(n int) string {
+			return v[delta+groups[2*n] : delta+groups[2*n+1]]
+		}
+		fullMatch := toString(0)
+		ident := toString(2)
+		start := groups[2*2] + delta
+		end := groups[2*2+1] + delta
+		length := end - start
 
-// 		parts := strings.Split(ident[1:], ".")
-// 		new := "index . "
-// 		for _, p := range parts {
-// 			pi, err := strconv.Atoi(p)
-// 			if err == nil {
-// 				new = fmt.Sprintf("%s %d", new, pi)
-// 			} else {
-// 				new = fmt.Sprintf("%s \"%s\"", new, p)
-// 			}
-// 		}
+		// you're always replacing at the ident location, it's just a question of adding the ()
+		addingBraces := strings.ReplaceAll(fullMatch, " ", "") != "{{"+ident+"}}"
 
-// 		if addingBraces {
-// 			new = fmt.Sprintf("(%s)", new)
-// 		}
+		new := toPath(ident[1:]).ToIndexCall()
+		if addingBraces {
+			new = fmt.Sprintf("(%s)", new)
+		}
 
-// 		v = v[:start] + new + v[end:]
-// 		delta = delta + len(new) - length
-// 	}
+		v = v[:start] + new + v[end:]
+		delta = delta + len(new) - length
+	}
 
-// 	return v, nil
-// }
-
-
+	return v, nil
+}
 
 func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error) {
 	if fmt.Sprintf("%T", n.value) != "string" {

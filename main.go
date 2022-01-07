@@ -49,12 +49,12 @@ func main() {
 		})
 
 	vlog(rootNode.view("toml"))
-
 	vlog("------")
 
-	// not doing this for now.
-	// rootNode.Transform(c, []string{}, identTransform)
-	// vlog(rootNode.View("toml"))
+	rootNode.changeLeaves(NodePath{},
+		func(n *Node, path NodePath) (interface{}, error) {
+			return identTransform(n, path, *rootNode)
+		})
 
 	realizeTransform := func(n *Node, path NodePath) (interface{}, error) {
 		if fmt.Sprintf("%T", n.value) != "string" {
