@@ -6,6 +6,35 @@ import (
 	"strings"
 )
 
+func (n *Node) resolveSplices(path NodePath, rootNode *Node) error {
+	path = append(path, n.value)
+
+	if n.value == "-" {
+		parentPath := path[1 : len(path)-1]
+		parent := rootNode.mustFind(parentPath...)
+
+		for _, c := range n.children {
+			splicePath := toPath(c.children[0].value.(string))
+			parent.children = append(parent.children, rootNode.mustFind(splicePath...).children...)
+		}
+
+		// remove self
+		spliceIndex := 0
+		for i, c := range parent.children {
+			if c.value == "-" {
+				spliceIndex = i
+			}
+		}
+		parent.children = append(parent.children[:spliceIndex], parent.children[spliceIndex+1:]...)
+	}
+
+	for _, n_ := range n.children {
+		n_.resolveSplices(path, rootNode)
+	}
+
+	return nil
+}
+
 // The go template default selection mechanism kinda sucks
 // you can't used dashes or numbers, even if they are keys in a table
 // invalid: {{.wow.0}} {{.wow-ok}}
@@ -64,7 +93,7 @@ func qualifyTransform(n *Node, path NodePath, rootNode Node) (interface{}, error
 	v := n.value.(string)
 	identRe := regexp.MustCompile("({{| )((\\.[a-zA-Z0-9-]+)+)")
 	matches := identRe.FindAllStringSubmatchIndex(fmt.Sprintf("%v", v), -1)
-	parentPath := path[0:len(path) - 1]
+	parentPath := path[0 : len(path)-1]
 
 	if len(matches) > 0 {
 		vlog("qualifying: .%s: '%s'", parentPath.ToString(), v)

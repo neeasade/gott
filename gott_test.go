@@ -6,6 +6,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestSplice(t *testing.T) {
+	verbose = true
+	n := NewNode("root")
+	n.add("subtable", "a", "{{.ok}}")
+	n.add("table", "ok", "foo")
+	n.add("table", "-", 0, "subtable")
+
+	n.resolveSplices(NodePath{}, n)
+	n.mustFind("table", "a", "{{.ok}}")
+}
+
 func TestNode(t *testing.T) {
 	n := NewNode("root",
 		NewNode("a", NewNode("b")),
@@ -47,7 +58,6 @@ func TestFromMap(t *testing.T) {
 	s, _ := n.view("mapString")
 	vlog("arst: %s", s)
 
-	// var mu sync.Mutex
 	mapToNode(&n, data, NodePath{})
 
 	s, _ = n.view("mapString")
