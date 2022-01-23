@@ -43,6 +43,13 @@ func main() {
 	rootNode := NewNode("root")
 	mapToNode(rootNode, tomlMap, NodePath{})
 
+	for _, e := range os.Environ() {
+		kv := strings.SplitN(e, "=", 2)
+		rootNode.add("env", kv[0], kv[1])
+	}
+
+	rootNode.resolveSplices(NodePath{}, rootNode)
+
 	rootNode.changeLeaves(NodePath{},
 		func(n *Node, path NodePath) (interface{}, error) {
 			return qualifyTransform(n, path, *rootNode)
