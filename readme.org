@@ -14,6 +14,11 @@ config = "{{.family}} {{.size}}"
 [loud]
 font-config = "{{.font.config | upper}}"
 
+[loud-copy]
+# use the '-' key for splicing other tables into this one.
+# with this, you could reference the following path: '.loud-copy.font-config'
+- = [ "loud" ]
+
 #+end_src
 
 ** Usage
