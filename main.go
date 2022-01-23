@@ -84,7 +84,7 @@ func main() {
 	}
 
 	if narrow != "" {
-		rootNode = rootNode.mustFind(toPath(narrow))
+		rootNode = rootNode.mustFind(toPath(narrow)...)
 	}
 
 	if action != "" {

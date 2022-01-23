@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"strconv"
 
 	"os/exec"
 	"text/template"
@@ -57,12 +59,26 @@ func makeTemplate() *template.Template {
 		return string(out)
 	}
 
-	funcMap["sh"] = func(command string) string {
-		out, err := exec.Command("bash", "-c", command).Output()
-		if err != nil {
-			glog.Fatal(err)
+	funcMap["sh"] = func(command string, args ...string) string {
+		args = append([]string{"-c", command, "--"}, args...)
+		out, err := exec.Command("bash", args...).Output()
+
+		exitStatus := true
+		if werr, ok := err.(*exec.ExitError); ok {
+			if s := werr.Error(); s != "0" {
+				exitStatus = false
+			}
 		}
-		return string(out)
+
+		// if err != nil {
+		// 	glog.Fatal(err)
+		// }
+
+		if strings.TrimSpace(string(out)) == "" {
+			return strconv.FormatBool(exitStatus)
+		} else {
+			return string(out)
+		}
 	}
 
 	funcMap["eq"] = func(a, b interface{}) bool { return a == b }
