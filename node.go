@@ -30,11 +30,28 @@ func (n Node) isLeaf() bool {
 	return len(n.children) == 0
 }
 
-func (n *Node) changeLeaves(path NodePath, operation func(*Node, NodePath) (interface{}, error)) error {
+func (n *Node) walk(path NodePath, operation func(NodePath) error) error {
+	path = append(path, n.value)
+
+	err := operation(path)
+	vlog("walk: %s", path.ToString())
+	if err != nil {
+		vlog("walk err at node %s", path.ToString())
+		return err
+	}
+
+	for _, n_ := range n.children {
+		n_.walk(path, operation)
+	}
+
+	return nil
+}
+
+func (n *Node) changeLeaves(path NodePath, operation func(NodePath) (interface{}, error)) error {
 	path = append(path, n.value)
 
 	if n.isLeaf() {
-		newVal, err := operation(n, path)
+		newVal, err := operation(path)
 		if err != nil {
 			vlog("transform err at node %s", path.ToString())
 			panic(err)
@@ -51,6 +68,36 @@ func (n *Node) changeLeaves(path NodePath, operation func(*Node, NodePath) (inte
 	}
 
 	return nil
+}
+
+func (n *Node) copy() *Node {
+	// lol
+	ret := NewNode(n.value)
+	n.changeLeaves(NodePath{},
+		func(path NodePath) (interface{}, error) {
+			ret.add(path[1:]...)
+			return path.last(), nil
+		})
+	return ret
+}
+
+func (n *Node) remove(path_ ...interface{}) {
+	path := NodePath(path_)
+	children := []*Node{}
+
+	var parent *Node
+	if (len(path) == 1) {
+		parent = n
+	} else {
+		parent = n.mustFind(path[:len(path)-1]...)
+	}
+
+	for _, c := range parent.children {
+		if c.value != path.last() {
+			children = append(children, c)
+		}
+	}
+	parent.children = children
 }
 
 func (n *Node) add(path_ ...interface{}) {
@@ -76,7 +123,7 @@ func (root *Node) toMap() map[string]interface{} {
 	result := map[string]interface{}{}
 
 	root.changeLeaves([]interface{}{},
-		func(n *Node, path NodePath) (interface{}, error) {
+		func(path NodePath) (interface{}, error) {
 			// vlog("map from leaf: %s", path.ToString())
 			path = path[1:]
 
@@ -144,13 +191,13 @@ func (root *Node) toMap() map[string]interface{} {
 				panic(err)
 			}
 
-			return n.value, nil
+			return path.last(), nil
 		})
 
 	return result
 }
 
-// doesn't include surrounding {{}}
+// doesn't include surrounding {{}}/()
 func (path NodePath) ToIndexCall() string {
 	result := "index . "
 	for _, v := range path {
@@ -163,6 +210,10 @@ func (path NodePath) ToIndexCall() string {
 	}
 
 	return result
+}
+
+func (path NodePath) last() interface{} {
+	return path[len(path)-1]
 }
 
 func (path NodePath) ToString() string {
@@ -179,13 +230,11 @@ func (path NodePath) ToString() string {
 
 	if result != "" {
 		// remove trailing .
-		result = result[0 : len(result)-1]
+		result = result[:len(result)-1]
 	}
 	return result
 }
 
-// "path" is a slice of strings+ints leading to a node in config
-// todo: see about using type alises to define these methods on strings/interface{}?
 func toPath(s string) NodePath {
 	path := []interface{}{}
 	for _, v := range strings.Split(s, ".") {
@@ -237,10 +286,10 @@ func (n *Node) mustFind(path_ ...interface{}) *Node {
 func (n Node) toFlatMap() map[string]string {
 	results := map[string]string{}
 	n.changeLeaves(NodePath{},
-		func(n *Node, path NodePath) (interface{}, error) {
+		func(path NodePath) (interface{}, error) {
 			// remove "root", value node
 			results[path[1:len(path)-1].ToString()] = fmt.Sprintf("%v", n.value)
-			return n.value, nil
+			return path.last(), nil
 		})
 	return results
 }

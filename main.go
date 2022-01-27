@@ -49,28 +49,52 @@ func main() {
 	}
 
 	rootNode.resolveSplices(NodePath{}, rootNode)
+	rootNode.walk(NodePath{},
+		func(path NodePath) error {
+			n, err := rootNode.find(path[1:]...)
+			if err != nil {
+				// we walked into a child we just removed
+				return nil
+			}
+
+			nv := n.value
+
+			if n.isLeaf() ||
+				fmt.Sprintf("%T", nv) != "string"  ||
+				nv.(string) == "" {
+				return nil
+			}
+
+			if nv.(string)[0:1] == "-" {
+				rootNode.remove(path[1:]...)
+			}
+
+			return nil
+		})
 
 	rootNode.changeLeaves(NodePath{},
-		func(n *Node, path NodePath) (interface{}, error) {
-			return qualifyTransform(n, path, *rootNode)
+		func(path NodePath) (interface{}, error) {
+			return qualifyTransform(path, *rootNode)
 		})
 
 	vlog(rootNode.view("toml"))
 	vlog("------")
 
 	rootNode.changeLeaves(NodePath{},
-		func(n *Node, path NodePath) (interface{}, error) {
-			if fmt.Sprintf("%T", n.value) != "string" {
-				return n.value, nil
+		func(path NodePath) (interface{}, error) {
+			val := path.last()
+			if fmt.Sprintf("%T", val) != "string" {
+				return val, nil
 			}
-			return identTransform(n.value.(string))
+			return identTransform(val.(string))
 		})
 
-	realizeTransform := func(n *Node, path NodePath) (interface{}, error) {
-		if fmt.Sprintf("%T", n.value) != "string" {
-			return n.value, nil
+	realizeTransform := func(path NodePath) (interface{}, error) {
+		nv := path.last()
+		if fmt.Sprintf("%T", nv) != "string" {
+			return nv, nil
 		}
-		v := n.value.(string)
+		v := nv.(string)
 
 		// oof
 		for strings.Contains(v, "{{") {
@@ -85,6 +109,7 @@ func main() {
 	}
 
 	rootNode.changeLeaves(NodePath{}, realizeTransform)
+	rootNode.remove("env")
 
 	for _, p := range promotions {
 		rootNode.promote(toPath(p))
