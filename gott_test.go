@@ -38,15 +38,14 @@ func TestNode(t *testing.T) {
 	assert.Equal(t, mapExpected, n.toMap())
 
 	n.changeLeaves([]interface{}{},
-		func(n *Node, _ NodePath) (interface{}, error) {
-			return n.value.(string) + "foo", nil
+		func(path NodePath) (interface{}, error) {
+			return path.last().(string) + "foo", nil
 		})
 
 	assert.Equal(t, "bfoo", n.mustFind("a", "bfoo").value)
 }
 
 func TestFromMap(t *testing.T) {
-
 	verbose = true
 	data := map[string]interface{}{
 		// "a":     "b",

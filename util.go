@@ -56,7 +56,12 @@ func makeTemplate() *template.Template {
 			glog.Fatal(err)
 		}
 
-		return string(out)
+		result := string(out)
+		if result[len(result)-1] == '\n' {
+			result = result[0:]
+		}
+
+		return result
 	}
 
 	funcMap["sh"] = func(command string, args ...string) string {

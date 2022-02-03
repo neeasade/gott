@@ -122,9 +122,10 @@ func (n *Node) add(path_ ...interface{}) {
 func (root *Node) toMap() map[string]interface{} {
 	result := map[string]interface{}{}
 
-	root.changeLeaves([]interface{}{},
+	root.changeLeaves(NodePath{},
 		func(path NodePath) (interface{}, error) {
 			// vlog("map from leaf: %s", path.ToString())
+			ret := path.last()
 			path = path[1:]
 
 			var base interface{} = map[string]interface{}{}
@@ -191,7 +192,7 @@ func (root *Node) toMap() map[string]interface{} {
 				panic(err)
 			}
 
-			return path.last(), nil
+			return ret, nil
 		})
 
 	return result
@@ -288,7 +289,7 @@ func (n Node) toFlatMap() map[string]string {
 	n.changeLeaves(NodePath{},
 		func(path NodePath) (interface{}, error) {
 			// remove "root", value node
-			results[path[1:len(path)-1].ToString()] = fmt.Sprintf("%v", n.value)
+			results[path[1:len(path)-1].ToString()] = fmt.Sprintf("%v", path.last())
 			return path.last(), nil
 		})
 	return results

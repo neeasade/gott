@@ -116,7 +116,7 @@ func main() {
 	}
 
 	if narrow != "" {
-		rootNode = rootNode.mustFind(toPath(narrow)...)
+		rootNode = NewNode("root", rootNode.mustFind(toPath(narrow)...).children...)
 	}
 
 	if action != "" {
