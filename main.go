@@ -144,6 +144,6 @@ func main() {
 	}
 
 	if queryStringPlain != "" {
-		fmt.Println(rootNode.render(tmpl, queryStringPlain))
+		fmt.Println(rootNode.mustRender(tmpl, queryStringPlain))
 	}
 }
